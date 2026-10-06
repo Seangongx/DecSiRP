@@ -1,0 +1,543 @@
+#include <vector>
+#include <array>
+#include <cmath>
+#include <limits>
+#include <algorithm>
+
+#include <DGtal/base/Common.h>
+#include <DGtal/kernel/SpaceND.h>
+#include <DGtal/kernel/domains/HyperRectDomain.h>
+#include <DGtal/kernel/BasicPointFunctors.h>
+#include <DGtal/images/ImageContainerBySTLVector.h>
+
+#include "RasterizedVoxel.h"
+
+using namespace DGtal;
+
+/**
+ * Classe templatisée Accumulator pour le calcul de l'accumulation
+ * et du confidence score.
+ *
+ * - Calcule A(v) : nombre de segments passant par le voxel v.
+ * - Calcule C(v) : confidence score selon 3 versions.
+ *
+ * La rasterisation des segments est centralisée dans rasterizeSegment().
+ *
+ * Template : D doit être un type de domaine DGtal
+ * (ex: HyperRectDomain<SpaceND<3>>).
+ */
+template <typename D>
+class Accumulator {
+public:
+    using Domain = D;
+    using Space = typename Domain::Space;
+    using Point = typename Space::Point;
+    using RealPoint = typename Space::RealPoint;
+    using RealVector = typename Space::RealVector;
+
+    using Image = ImageContainerBySTLVector<Domain, int>;
+    using RealImage = ImageContainerBySTLVector<Domain, double>;
+
+    enum class ConfidenceMode {
+        Base,
+        AlternativeA,
+        AlternativeB
+    };
+
+private:
+
+  using RasterizedSegment = std::vector<RasterizedVoxel<Point> >;
+
+    std::vector<RealPoint> points;
+    std::vector<RealVector> normals;
+
+    Domain domain;
+    double maxLength;
+
+    Image accumulationImage;
+    RealImage confImage;
+
+public: 
+    /*
+     * Rasterisation mémorisée pour éviter de refaire le calcul
+     * lors du calcul du confidence score.
+     */
+    std::vector<RasterizedSegment> rasterizedSegments;
+
+
+private:
+
+    /**
+     * Rasterise un segment par supercouverture.
+     *
+     * Tous les voxels touchés par le segment sont conservés.
+     *
+     * En particulier, lorsqu'un segment traverse exactement
+     * une arête ou un sommet de la grille, tous les voxels
+     * concernés sont ajoutés.
+     *
+     * Le champ t contient la distance euclidienne réelle
+     * depuis le point de départ du segment.
+     */
+    RasterizedSegment rasterizeSegment(
+        const RealPoint& start,
+        const RealVector& normal) const
+    {
+        constexpr double eps = 1e-10;
+
+        RasterizedSegment result;
+
+        if (normal.norm() < eps)
+            return result;
+
+        // La normale est supposée orientée vers l'intérieur.
+        const RealVector direction = normal.getNormalized();
+
+        // Voxel initial.
+        Point currentVoxel(
+            static_cast<int>(std::floor(start[0])),
+            static_cast<int>(std::floor(start[1])),
+            static_cast<int>(std::floor(start[2]))
+        );
+
+        if (!domain.isInside(currentVoxel))
+            return result;
+
+        // Le voxel initial est traversé à t = 0.
+        result.push_back({currentVoxel, 0.0});
+
+        std::array<double, 3> tMax;
+        std::array<double, 3> tDelta;
+        std::array<int, 3> step;
+
+        for (int i = 0; i < 3; ++i) {
+
+            if (std::fabs(direction[i]) < eps) {
+                tDelta[i] =
+                    std::numeric_limits<double>::infinity();
+                tMax[i] =
+                    std::numeric_limits<double>::infinity();
+                step[i] = 0;
+                continue;
+            }
+
+            tDelta[i] = 1.0 / std::fabs(direction[i]);
+
+            const double floorCoord = std::floor(start[i]);
+            const double frac = start[i] - floorCoord;
+
+            if (direction[i] > 0.0) {
+                tMax[i] = (1.0 - frac) * tDelta[i];
+                step[i] = +1;
+            }
+            else {
+                tMax[i] = frac * tDelta[i];
+                step[i] = -1;
+            }
+        }
+
+        /*
+         * Parcours de la grille.
+         *
+         * A chaque événement, plusieurs dimensions peuvent
+         * avoir le même tMax. Nous construisons alors la
+         * supercouverture en ajoutant tous les voxels correspondant
+         * aux sous-ensembles non vides des dimensions traversées.
+         */
+        while (true) {
+
+            double tMin =
+                std::min({tMax[0], tMax[1], tMax[2]});
+
+            if (!std::isfinite(tMin) || tMin > maxLength + eps)
+                break;
+
+            // Dimensions traversées simultanément.
+            std::array<int, 3> crossed{};
+            int numCrossed = 0;
+
+            for (int d = 0; d < 3; ++d) {
+                if (std::fabs(tMax[d] - tMin) < eps) {
+                    crossed[numCrossed++] = d;
+                }
+            }
+
+            if (numCrossed == 0)
+                break;
+
+            /*
+             * Supercouverture :
+             *
+             * si k dimensions sont traversées simultanément,
+             * il faut ajouter les 2^k - 1 voxels correspondant
+             * aux sous-ensembles non vides de ces dimensions.
+             *
+             * Exemple pour un passage simultané en x et y :
+             *
+             *       +---+---+
+             *       |   |   |
+             *       +---X---+
+             *       |   |   |
+             *       +---+---+
+             *
+             * les trois voxels voisins x, y et xy sont ajoutés.
+             */
+            const int numSubsets = 1 << numCrossed;
+
+            for (int mask = 1; mask < numSubsets; ++mask) {
+
+                Point voxel = currentVoxel;
+
+                for (int j = 0; j < numCrossed; ++j) {
+                    if (mask & (1 << j)) {
+                        const int d = crossed[j];
+                        voxel[d] += step[d];
+                    }
+                }
+
+                if (domain.isInside(voxel)) {
+                    result.push_back({voxel, tMin});
+                }
+            }
+
+            /*
+             * On avance dans toutes les dimensions ayant été
+             * traversées simultanément.
+             */
+            for (int j = 0; j < numCrossed; ++j) {
+                const int d = crossed[j];
+
+                currentVoxel[d] += step[d];
+                tMax[d] += tDelta[d];
+            }
+
+            if (!domain.isInside(currentVoxel))
+                break;
+        }
+
+        return result;
+    }
+
+
+    /**
+     * Calcule les rasterisations de tous les segments.
+     */
+    void computeRasterizations()
+    {
+        rasterizedSegments.clear();
+        rasterizedSegments.reserve(points.size());
+
+        for (std::size_t i = 0; i < points.size(); ++i) {
+            rasterizedSegments.push_back(
+                rasterizeSegment(points[i], normals[i])
+            );
+        }
+
+	///
+	std::cout << "segments = "
+		  << rasterizedSegments.size() << std::endl;
+
+	std::size_t nonEmpty = 0;
+	std::size_t totalVoxels = 0;
+
+	for (const auto& s : rasterizedSegments) {
+	  if (!s.empty())
+	    ++nonEmpty;
+	  totalVoxels += s.size();
+	}
+
+	std::cout << "non-empty segments = "
+		  << nonEmpty << std::endl;
+
+	std::cout << "total rasterized voxels = "
+		  << totalVoxels << std::endl;
+	
+    }
+
+
+    /**
+     * Calcule l'image d'accumulation à partir des rasterisations.
+     */
+    void computeAccumulation()
+    {
+        for (auto it = domain.begin(); it != domain.end(); ++it)
+            accumulationImage.setValue(*it, 0);
+
+        for (const auto& segment : rasterizedSegments) {
+            for (const auto& rv : segment) {
+                const Point& v = rv.voxel;
+
+                accumulationImage.setValue(
+                    v,
+                    accumulationImage(v) + 1
+                );
+            }
+        }
+    }
+
+
+public:
+
+    /**
+     * Constructeur
+     *
+     * @param pts Points de départ des segments
+     * @param norms Normales intérieures
+     * @param dom Domaine discret
+     * @param l Longueur maximale des segments
+     */
+    Accumulator(
+        const std::vector<RealPoint>& pts,
+        const std::vector<RealVector>& norms,
+        const Domain& dom,
+        double l)
+        : points(pts),
+          normals(norms),
+          domain(dom),
+          maxLength(l),
+          accumulationImage(domain),
+          confImage(domain)
+    {
+        if (points.size() != normals.size()) {
+            trace.error()
+                << "Tailles incompatibles : points et normales "
+                   "doivent avoir la même taille.\n";
+            return;
+        }
+
+        /*
+         * Une seule rasterisation pour tout l'objet.
+         */
+        computeRasterizations();
+
+        /*
+         * L'accumulation est ensuite calculée à partir
+         * de cette représentation.
+         */
+        computeAccumulation();
+    }
+
+
+    /**
+     * Calcule le confidence score C(v).
+     *
+     * Le score final est normalisé par l'accumulation :
+     *
+     *              N(v)
+     *       C(v) = ------
+     *              A(v)
+     *
+     * Il est donc compris entre 0 et 1.
+     *
+     * @param mode Version du score
+     * @param beta Paramètre pour AlternativeB (softmax)
+     */
+    void computeConfidenceScore(
+        ConfidenceMode mode,
+        double beta = 1.0)
+    {
+        for (auto it = domain.begin(); it != domain.end(); ++it)
+            confImage.setValue(*it, 0.0);
+
+        const double eps = 1e-10;
+
+        /*
+         * Parcourir chaque segment.
+         */
+        for (const auto& segment : rasterizedSegments) {
+
+            if (segment.empty())
+                continue;
+
+            /*
+             * Récupérer les accumulations des voxels traversés.
+             */
+            std::vector<double> A_vals;
+            A_vals.reserve(segment.size());
+
+            for (const auto& rv : segment) {
+                A_vals.push_back(
+                    accumulationImage(rv.voxel)
+                );
+            }
+
+            if (mode == ConfidenceMode::Base) {
+
+                /*
+                 * Vote sur tous les voxels de maximum
+                 * d'accumulation.
+                 */
+                const double A_max =
+                    *std::max_element(
+                        A_vals.begin(),
+                        A_vals.end()
+                    );
+
+                for (std::size_t i = 0;
+                     i < segment.size();
+                     ++i)
+                {
+                    if (std::fabs(A_vals[i] - A_max) < eps) {
+
+                        const Point& v = segment[i].voxel;
+
+                        /*
+                         * Vote brut.
+                         */
+                        confImage.setValue(
+                            v,
+                            confImage(v) + 1.0
+                        );
+                    }
+                }
+            }
+
+            else if (mode == ConfidenceMode::AlternativeA) {
+
+                /*
+                 * Même principe, mais le vote total du segment
+                 * est réparti entre tous ses voxels maximaux.
+                 */
+                const double A_max =
+                    *std::max_element(
+                        A_vals.begin(),
+                        A_vals.end()
+                    );
+
+                std::size_t k = 0;
+
+                for (double a : A_vals) {
+                    if (std::fabs(a - A_max) < eps)
+                        ++k;
+                }
+
+                if (k == 0)
+                    continue;
+
+                const double vote =
+                    1.0 / static_cast<double>(k);
+
+                for (std::size_t i = 0;
+                     i < segment.size();
+                     ++i)
+                {
+                    if (std::fabs(A_vals[i] - A_max) < eps) {
+
+                        const Point& v = segment[i].voxel;
+
+                        confImage.setValue(
+                            v,
+                            confImage(v) + vote
+                        );
+                    }
+                }
+            }
+
+            else if (mode == ConfidenceMode::AlternativeB) {
+
+                /*
+                 * Softmax numériquement stable.
+                 *
+                 * On utilise :
+                 *
+                 * exp(beta * (A_i - A_max))
+                 *
+                 * plutôt que exp(beta * A_i), afin d'éviter
+                 * les overflow.
+                 */
+                const double A_max =
+                    *std::max_element(
+                        A_vals.begin(),
+                        A_vals.end()
+                    );
+
+                double denominator = 0.0;
+
+                for (double a : A_vals) {
+                    denominator +=
+                        std::exp(beta * (a - A_max));
+                }
+
+                if (denominator <= 0.0)
+                    continue;
+
+                for (std::size_t i = 0;
+                     i < segment.size();
+                     ++i)
+                {
+                    const double probability =
+                        std::exp(
+                            beta * (A_vals[i] - A_max)
+                        ) / denominator;
+
+                    const Point& v = segment[i].voxel;
+
+                    confImage.setValue(
+                        v,
+                        confImage(v) + probability
+                    );
+                }
+            }
+        }
+
+        /*
+         * Normalisation par l'accumulation.
+         *
+         * A(v) = nombre total de segments traversant v.
+         *
+         * confImage(v) contient le nombre (ou poids) de votes
+         * en faveur de v.
+         *
+         * Le rapport mesure donc la proportion des segments
+         * traversant v qui le sélectionnent.
+         */
+        for (auto it = domain.begin(); it != domain.end(); ++it) {
+
+            const int A = accumulationImage(*it);
+
+            if (A > 0) {
+                const double score =
+                    confImage(*it) /
+                    static_cast<double>(A);
+
+                confImage.setValue(*it, score);
+            }
+            else {
+                confImage.setValue(*it, 0.0);
+            }
+        }
+
+	/// 
+	double maxConf = 0.0;
+	int nonZero = 0;
+
+	for (auto it = domain.begin(); it != domain.end(); ++it) {
+	  if (confImage(*it) > 0.0) {
+	    ++nonZero;
+	    maxConf = std::max(maxConf, confImage(*it));
+	  }
+	}
+
+	std::cout << "Base votes: non-zero = "
+		  << nonZero
+		  << ", max = "
+		  << maxConf << std::endl;
+	
+    }
+
+
+    /**
+     * Accès à l'image d'accumulation.
+     */
+    const Image& getImage() const {
+        return accumulationImage;
+    }
+
+
+    /**
+     * Accès aux scores.
+     */
+    const RealImage& getConfidenceScores() const {
+        return confImage;
+    }
+};

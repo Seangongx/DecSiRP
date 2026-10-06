@@ -1,0 +1,405 @@
+#pragma once
+
+#include "RasterizedVoxel.h"
+
+#include <DGtal/base/Common.h>
+#include <DGtal/geometry/tools/QuickHull.h>
+
+#include <cmath>
+#include <cstdint>
+#include <limits>
+#include <map>
+#include <queue>
+#include <set>
+#include <vector>
+#include <functional>
+
+/**
+ * Analyse des voxels intérieurs contenus dans les segments rasterisés.
+ *
+ * Un voxel est considéré comme intérieur s'il n'est pas un sommet de
+ * l'enveloppe convexe formée par :
+ *   - les origines des segments qui contiennent ce voxel ;
+ *   - le voxel lui-même.
+ *
+ * Pour chaque voxel intérieur, on calcule ensuite la distance maximale
+ * à une origine de segment le contenant.
+ *
+ * Deux voxels intérieurs sont connectés si la distance entre leurs centres
+ * est strictement inférieure à la somme de leurs rayons.
+ *
+ * Les composantes connexes ainsi obtenues définissent les classes de voxels.
+ */
+
+template <typename Point, typename RealPoint>
+class InteriorVoxelComponents
+{
+public:
+
+  using VoxelPredicate = std::function<bool(const Point&)>;
+
+  using RasterizedVoxelType = RasterizedVoxel<Point>;
+
+  struct VoxelInfo
+  {
+    Point voxel;
+
+    // Indices des segments contenant ce voxel.
+    std::vector<int> segments;
+
+    // Origines correspondantes.
+    std::vector<RealPoint> origins;
+
+    bool interior = false;
+
+    // Distance maximale du voxel à une origine.
+    double distance = 0.0;
+
+    bool kept = false; 
+    
+    // Composante connexe, 0 si le voxel n'est pas intérieur.
+    int component = 0;
+  };
+
+  using Kernel3D = DGtal::ConvexHullRationalKernel<3>;
+  using QuickHull3D = DGtal::QuickHull<Kernel3D>;
+
+public:
+  
+  const std::vector<RealPoint>& myOrigins;
+  const std::vector<std::vector<RasterizedVoxelType> >& myRasterizedSegments;
+
+  const std::vector<RealPoint>& myVertices; 
+  const std::vector<std::vector<std::size_t> >& myFacets; 
+
+  double myDistThreshold; 
+  
+  //vector of voxels, enriched with info of VoxelInfo type 
+  std::vector<VoxelInfo> myVoxels;
+
+  //map that, given a point, returns the index of the associated voxel 
+  std::map<Point, int> myVoxelIndex;
+
+  //vector of connected components,
+  //each component being a vector of voxel indices
+  std::vector<std::vector<int>> myComponents;
+  
+public:
+
+  InteriorVoxelComponents(const std::vector<RealPoint>& origins,
+			  const std::vector<std::vector<RasterizedVoxelType> >& rasterizedSegments,
+			  const std::vector<RealPoint>& vertices, 
+			  const std::vector<std::vector<std::size_t> >& facets, 
+			  VoxelPredicate keepVoxel, double aDist)
+    : myOrigins(origins), myRasterizedSegments(rasterizedSegments), myVertices(vertices), myFacets(facets),
+      myDistThreshold(aDist)
+  {
+    if (origins.size() != rasterizedSegments.size())
+      throw std::invalid_argument("wrong size");
+    
+    buildVoxelIncidences(keepVoxel);
+    classifyInteriorVoxels();
+    buildComponents();
+  }
+  
+  /**
+   * Retourne les informations associées à tous les voxels rencontrés.
+   */
+  const std::vector<VoxelInfo>& getVoxels() const
+  {
+    return myVoxels;
+  }
+
+  /**
+   * Retourne les composantes connexes.
+   *
+   * Chaque composante contient les indices des VoxelInfo correspondants.
+   */
+  const std::vector<std::vector<int>>& getComponents() const
+  {
+    return myComponents;
+  }
+
+  int numberOfComponents() const {
+    return static_cast<int>( myComponents.size() );
+  }
+
+  template<typename Callback>
+  const void getFacetsComponents(const Callback& aCallback) const {
+    
+    for (std::size_t i = 0; i < myFacets.size(); ++i) {
+      
+      double minDistance = std::numeric_limits<double>::max();
+      int component = 0;
+      
+      for (const auto& rv : myRasterizedSegments[i])
+	{
+	  auto it = myVoxelIndex.find(rv.voxel);
+	  if (it != myVoxelIndex.end()) {
+	    const int index = it->second;
+
+	    if (myVoxels[index].kept &&
+		myVoxels[index].component > 0)
+	      {
+		if (myVoxels[index].distance < minDistance) {
+		  minDistance = myVoxels[index].distance;
+		  component = myVoxels[index].component;
+		}
+	      }
+	  }
+      
+	  if (component > 0) {
+	    aCallback(i, component); 
+	  }
+	}
+    }
+  }
+
+  public:
+
+  /**
+   * Construit l'incidence voxel <-> segments.
+   */
+  void buildVoxelIncidences(const VoxelPredicate& keepVoxel)
+  {
+    int nbKept = 0;
+    
+    for (int segmentId = 0;
+         segmentId < static_cast<int>(myOrigins.size());
+         ++segmentId)
+      {
+        std::set<Point> segmentVoxels;
+
+        for (const auto& rv : myRasterizedSegments[segmentId])
+	  {
+            if (keepVoxel(rv.voxel))
+	      segmentVoxels.insert(rv.voxel);
+	  }
+	
+        for (const Point& p : segmentVoxels)
+	  {
+            auto [it, inserted] = myVoxelIndex.emplace(p, static_cast<int>(myVoxels.size()));
+
+            const int index = it->second;
+
+            if (inserted)
+	      {
+                VoxelInfo info;
+                info.voxel = p;
+                myVoxels.push_back(std::move(info));
+		nbKept++; 
+	      }
+
+            myVoxels[index].segments.push_back(segmentId);
+            myVoxels[index].origins.push_back(myOrigins[segmentId]);
+	  }
+      }
+    std::cout << "kept voxels = " << nbKept << std::endl;
+  }
+
+  
+  /**
+   * Teste si un voxel est un sommet de l'enveloppe convexe des
+   * origines des segments qui le contiennent, auxquelles on ajoute
+   * le voxel lui-même.
+   *
+   * Le voxel est intérieur s'il n'est PAS un sommet de cette enveloppe.
+   */
+  bool isInteriorCvxHBased(const VoxelInfo& info) const
+  {
+    if ( (info.origins.empty()) || (info.origins.size() == 1) )
+      return false;
+
+    std::vector<RealPoint> points;
+    points.reserve(info.origins.size() + 1);
+
+    // Conversion du voxel en RealPoint.
+    points.push_back(RealPoint(info.voxel));
+    
+    for (const auto& origin : info.origins) {
+      points.push_back(origin);
+    }
+
+    const std::uint64_t precision = 1000; 
+    Kernel3D kernel(precision);
+    QuickHull3D hull(kernel);
+
+    hull.setInput(points);
+    hull.computeConvexHull();
+  
+    QuickHull3D::IndexRange p2v;
+    hull.getPoint2Vertex( p2v );
+    
+    if (p2v.empty())
+      return false;
+
+    const auto voxelProcessedIndex = hull.input2comp[0];
+    return p2v[voxelProcessedIndex] == QuickHull3D::UNASSIGNED;
+  }
+
+  /**
+   * Teste si un voxel est un sommet de l'enveloppe convexe des
+   * origines des segments qui le contiennent, auxquelles on ajoute
+   * le voxel lui-même.
+   *
+   * Le voxel est intérieur s'il n'est PAS un sommet de cette enveloppe.
+   */
+  bool isInterior(const VoxelInfo& info) const
+  {
+    if ( (info.origins.empty()) || (info.origins.size() == 1) )
+      return false;
+
+    std::vector<RealPoint> points;
+    points.reserve(info.origins.size()*3 + 1);
+
+    //first point is info.voxel
+    points.push_back(RealPoint(info.voxel));
+
+    //others are vertices of associated facets
+    for (const auto& sidx : info.segments) {
+      auto face = myFacets[sidx];
+      for (const auto& vidx : face) {
+	points.push_back(myVertices[vidx]);
+      }
+    }
+
+    //convex hull computation
+    const std::uint64_t precision = 1000; 
+    Kernel3D kernel(precision);
+    QuickHull3D hull(kernel);
+
+    hull.setInput(points);
+    hull.computeConvexHull();
+  
+    QuickHull3D::IndexRange p2v;
+    hull.getPoint2Vertex( p2v );
+    
+    if (p2v.empty())
+      return false;
+
+    const auto voxelProcessedIndex = hull.input2comp[0];
+    return p2v[voxelProcessedIndex] == QuickHull3D::UNASSIGNED;
+  }
+  
+
+  /**
+   * Détermine les voxels intérieurs et leur rayon minimal.
+   */
+  void classifyInteriorVoxels()
+  {
+    int nbIn = 0;
+    int nbKept = 0; 
+      
+    for (auto& info : myVoxels)
+      {
+	info.interior = isInterior(info); 
+
+	if (!info.interior)
+	  continue;
+	else
+	  nbIn++; 
+
+	const RealPoint voxelPoint = RealPoint(info.voxel);
+
+	double minDistanceSquared =
+	  (voxelPoint - info.origins.at(0)).squaredNorm(); 
+
+	for (const auto& origin : info.origins)
+	  {
+	    const double d2 =
+	      (voxelPoint - origin).squaredNorm();
+
+	    minDistanceSquared =
+	      std::min(minDistanceSquared, d2);
+	  }
+
+	info.distance = std::sqrt(minDistanceSquared);
+
+	info.kept = (info.interior && info.distance > myDistThreshold);
+
+	if (info.kept)
+	  nbKept++; 
+	  
+      }
+
+    std::cout << "interior voxels = " << nbIn << std::endl; 
+    std::cout << "far enough      = " << nbKept << std::endl; 
+  }
+
+
+  /**
+   * Teste si deux voxels intérieurs sont connectés.
+   *
+   * Chaque voxel est interprété comme le centre d'une boule de rayon
+   * minDistance. Deux voxels sont connectés si les deux boules
+   * s'intersectent strictement.
+   */
+  bool areConnected(const VoxelInfo& a,
+		    const VoxelInfo& b) const
+  {
+    const RealPoint pa = RealPoint(a.voxel);
+    const RealPoint pb = RealPoint(b.voxel);
+
+    const double distanceSquared =
+      (pa - pb).squaredNorm();
+
+    const double radiusSum =
+      a.distance + b.distance;
+
+    return distanceSquared < radiusSum * radiusSum;
+  }
+
+
+  /**
+   * Construit les composantes connexes du graphe des voxels intérieurs.
+   *
+   * Version naïve O(n²), suffisante pour un premier prototype.
+   */
+  void buildComponents()
+  {
+    const int n = static_cast<int>(myVoxels.size());
+    std::vector<bool> visited(n, false);
+
+    auto condition = [this, &visited](const int& idx) {
+      return (!myVoxels[idx].kept
+	      || visited[idx]);
+    };
+
+    for (int start = 0; start < n; ++start)
+      {
+	if (condition(start))
+	  continue;
+
+	const int componentId =
+	  static_cast<int>(myComponents.size()) + 1;
+
+	myComponents.emplace_back();
+
+	std::queue<int> queue;
+	queue.push(start);
+	visited[start] = true;
+
+	while (!queue.empty())
+	  {
+	    const int current = queue.front();
+	    queue.pop();
+
+	    myVoxels[current].component = componentId;
+	    myComponents.back().push_back(current);
+
+	    for (int candidate = 0; candidate < n; ++candidate)
+	      {
+		if (condition(candidate))
+		  continue;
+		  
+		if (areConnected(myVoxels[current],
+				 myVoxels[candidate]))
+		  {
+		    visited[candidate] = true;
+		    queue.push(candidate);
+		  }
+	      }
+	  }
+      }
+  }
+};

@@ -1,0 +1,314 @@
+#ifndef SURFACEMANAGER_H
+#define SURFACEMANAGER_H
+
+#include <DGtal/helpers/Shortcuts.h>
+#include <DGtal/helpers/ShortcutsGeometry.h>
+#include <DGtal/topology/ImplicitDigitalSurface.h>
+#include <DGtal/shapes/ShapeGeometricFunctors.h>
+
+#include <DGtal/io/readers/MeshReader.h>
+#include <DGtal/io/writers/MeshWriter.h>
+
+//--------------------------------------------------------------------------------
+//-- discrete surface 
+//--------------------------------------------------------------------------------
+
+template<typename TKSpace>
+class SurfaceManager {
+
+public:
+
+  //--- useful types
+  typedef DGtal::Shortcuts<TKSpace> SH3;
+  typedef typename SH3::KSpace KSpace;
+  typedef typename SH3::Point Point;
+  typedef typename SH3::Vector Vector;
+  typedef typename SH3::RealPoint RealPoint;
+  typedef typename SH3::RealVector RealVector;
+
+  //--- Mesh types
+  typedef std::vector<std::vector<std::size_t>> MeshFaces;
+  typedef std::vector<RealPoint> MeshVertices;
+  typedef std::map<RealPoint,std::size_t> MeshMap; 
+  
+  //--- Mesh representing the digital surface
+  MeshVertices myVertices; // a vector of discrete points (vertex embedding)
+  MeshFaces myFaces; // a vector of vectors of indices (faces/topology)
+  MeshMap myMap; //map a discrete point to its index in 'myVertices'
+
+  //--- points and normals
+  std::vector<RealPoint> myPoints;
+  std::vector<RealVector> myNormals; 
+
+  //--- domain
+  typedef typename DGtal::Z3i::Domain Domain;
+  Domain myDomain; 
+  
+  //--------------------------------------------------------------------------------
+  SurfaceManager(): myVertices(), myFaces(), myMap()
+  {}
+
+  //--------------------------------------------------------------------------------
+  void clear() {
+    myVertices.clear();
+    myFaces.clear();
+    myMap.clear();
+
+    myPoints.clear(); 
+    myNormals.clear(); 
+  }
+
+  //--------------------------------------------------------------------------------
+  void buildFromMesh(std::string const& file, double h)
+  {
+    DGtal::trace.beginBlock( "Build from mesh" ); 
+
+    //the mesh si scaled up by r
+    double r = 1/h;
+    
+    typedef typename DGtal::Mesh<RealPoint>::MeshFace Face;
+    DGtal::Mesh<RealPoint> mesh(true);
+    mesh << file;
+
+    for (unsigned int iFace = 0; iFace < mesh.nbFaces(); iFace++) {
+      Face aFace = mesh.getFace(iFace);
+
+      RealPoint p0 = mesh.getVertex(aFace.at(0));
+      RealPoint p1 = mesh.getVertex(aFace.at(2));
+      RealPoint p2 = mesh.getVertex(aFace.at(1));
+
+      RealVector n = ((p1 - p0).crossProduct(p2 - p0)).getNormalized();
+      myNormals.push_back(n);
+      myPoints.push_back((p0 + p1 + p2) * r / 3.0);
+    }
+
+    std::pair<RealPoint, RealPoint> bb =
+      mesh.getBoundingBox();
+    myDomain = Domain( bb.first*r - RealPoint::diagonal(2.0),
+		       bb.second*r + RealPoint::diagonal(2.0));
+
+    DGtal::trace.info() << myDomain << std::endl; 
+    DGtal::trace.info() << " #" << myPoints.size() << " points" << std::endl; 
+    DGtal::trace.info() << " #" << myNormals.size() << " normals" << std::endl; 
+
+    //mesh copy
+    myVertices.reserve(mesh.nbVertex());
+    for (auto it = mesh.vertexBegin(); it != mesh.vertexEnd(); ++it) {
+      myVertices.push_back( (*it)*r ); 
+    }
+    myFaces.reserve(mesh.nbFaces());
+    for (auto it = mesh.faceBegin(); it != mesh.faceEnd(); ++it) {
+      myFaces.push_back(*it); 
+    }
+    
+    DGtal::trace.endBlock(); 
+  }
+  
+  //--------------------------------------------------------------------------------
+  void buildFromImage(std::string const& file)
+  {
+    //discrete surface
+    typedef DGtal::ShortcutsGeometry<TKSpace> SHG3;
+
+    auto params    = SH3::defaultParameters() | SHG3::defaultParameters();
+    auto image     = SH3::makeBinaryImage( file, params );
+    auto K         = SH3::getKSpace( image );
+    auto surface   = SH3::makeLightDigitalSurface( image, K, params );
+
+    myDomain = image->domain();
+    
+    buildMesh(K, surface);
+
+    // points
+    fillPointsFromCurrentMesh();
+
+    std::cerr << "TODO normal estimation" << std::endl; 
+  }
+
+  //--------------------------------------------------------------------------------
+  void buildFromPolynomial(std::string const& polynomial, double h)
+  {
+
+    DGtal::trace.beginBlock( "Build from polynomial" ); 
+
+    // shape and space
+    typedef DGtal::ShortcutsGeometry<KSpace> SHG3;
+    auto params = SH3::defaultParameters() | SHG3::defaultParameters();
+    params( "polynomial", polynomial )( "gridstep", h );
+
+    auto implicit_shape  = SH3::makeImplicitShape3D  ( params );
+    auto digitized_shape = SH3::makeDigitizedImplicitShape3D( implicit_shape, params );
+    myDomain = digitized_shape->getDomain();
+    auto K   = SH3::getKSpace( myDomain.lowerBound(), myDomain.upperBound());
+
+    DGtal::trace.info() << myDomain << std::endl; 
+
+    // implicit surface container by tracking
+    auto bel = DGtal::Surfaces<KSpace>::findABel(K, *digitized_shape);
+    using SurfaceContainer = DGtal::ImplicitDigitalSurface<KSpace, typename SH3::DigitizedImplicitShape3D>;
+    auto containerPtr = new SurfaceContainer(K, *digitized_shape, true, bel);
+
+    // decorator
+    using Surface = DGtal::DigitalSurface<SurfaceContainer>;
+    auto surface = DGtal::CountedPtr<Surface>(new Surface(containerPtr)); // acquired
+
+    // mesh construction
+    std::set<Point> vertexSet; 
+    for (const auto& s: *surface) {
+      auto surfelVertices = SH3::getPrimalVertices(K, s, true);	
+      for (const auto& v: surfelVertices) {
+	vertexSet.insert(K.uCoords(v)); 
+      }
+    }
+    //vertices
+    for (auto it = vertexSet.begin(); it != vertexSet.end(); ++it) {
+      Point p = *it;
+      //embedding
+      RealPoint embedded((p[0]-0.5) * h,
+			 (p[1]-0.5) * h,
+			 (p[2]-0.5) * h);
+      //projection onto the surface
+      auto x = implicit_shape->nearestPoint( embedded );
+      //we rescale it 
+      myVertices.push_back(x / h);
+      //map to retrieve the index from the integer point
+      myMap.emplace( p, myVertices.size()-1 ); 
+    }
+    //faces
+    for (const auto& s: *surface) {
+      auto surfelVertices = SH3::getPrimalVertices(K, s, true);	
+
+      std::vector<std::size_t> surfelIndices; 
+      for (const auto& v: surfelVertices) {
+	auto it = myMap.find( K.uCoords(v) );
+	assert(it != myMap.end());
+	surfelIndices.push_back(it->second); 
+      }
+      
+      myFaces.push_back( surfelIndices ); 
+    }
+    
+    DGtal::trace.info() << "Mesh"
+			<< " #" << myVertices.size() << " vertices"
+			<< " #" << myFaces.size() << " faces" << std::endl; 
+
+    // representative points = face barycenters
+    for (unsigned int i = 0; i < myFaces.size(); i++) {
+
+      std::vector<std::size_t> face = myFaces[i]; 
+
+      RealPoint p0 = myVertices[face[0]]; 
+      RealPoint p1 = myVertices[face[1]];
+      RealPoint p2 = myVertices[face[2]];
+      RealPoint p3 = myVertices[face[3]]; 
+      RealPoint tot = (p0 + p1 + p2 + p3) / 4.0 * h;
+      auto x = implicit_shape->nearestPoint(tot);
+      myPoints.push_back(x / h);
+    }
+    
+    DGtal::trace.info() << " #" << myPoints.size() << " points" << std::endl; 
+
+    // normals (from the implicit shape)
+    typename SHG3::NormalFunctor aFct; 
+    aFct.attach( implicit_shape );
+    for (auto const& p : myPoints) {
+      //NB p is projected onto the surface scaled by 1/h 
+      auto x = p * h; 
+      RealVector normal = aFct(x);//outward
+      normal.negate();            //inward
+      myNormals.push_back( normal ); 
+    }
+    DGtal::trace.info() << " #" << myNormals.size() << " normals" << std::endl; 
+
+    DGtal::trace.endBlock(); 
+    
+  }
+
+  //--------------------------------------------------------------------------------
+  bool operator()(Point const& aPoint) const {
+    return this->myMap.find(aPoint) != this->myMap.end(); 
+  }
+
+  //--------------------------------------------------------------------------------
+  template <typename KSpace, typename Surface>
+  void buildMesh(KSpace const& aK, Surface const& aSurface) {
+
+    auto surfels = SH3::getSurfelRange(aSurface);
+    
+    //vertices
+    fillVerticesFromSurface(aK, surfels); 
+
+    //map
+    for (std::size_t idx = 0; idx < myVertices.size(); ++idx) {
+      myMap.emplace( myVertices[idx], idx ); 
+    }
+
+    //faces
+    fillFacesFromSurfaceAndMap(aK, surfels);
+      
+  }
+        
+private:
+
+  //--------------------------------------------------------------------------------
+  void fillPointsFromCurrentMesh() {
+    
+    for (unsigned int i = 0; i < myFaces.size(); i++) {
+
+      std::vector<std::size_t> face = myFaces[i]; 
+
+      RealPoint p0 = myVertices[face[0]]; 
+      RealPoint p1 = myVertices[face[1]];
+      RealPoint p2 = myVertices[face[2]];
+      RealPoint p3 = myVertices[face[3]]; 
+      RealPoint tot = (p0 + p1 + p2 + p3) / 4.0;
+      myPoints.push_back( tot ); 
+    }
+
+  }
+  
+  //--------------------------------------------------------------------------------
+  template <typename KSpace, typename Surfels>
+  void fillVerticesFromSurface(KSpace const& aK, Surfels const& aSurfelVector) {
+  
+    std::set<Point> vertexSet; 
+
+    for (const auto& s: aSurfelVector) {
+
+      auto surfelVertices = SH3::getPrimalVertices(aK, s, true);	
+      for (const auto& v: surfelVertices) {
+	vertexSet.insert(aK.uCoords(v)); 
+      }
+    }
+
+    for (auto it = vertexSet.begin(); it != vertexSet.end(); ++it) {
+      Point x = *it;
+      //point to realpoint conversion + offset
+      myVertices.push_back(RealPoint(x[0]-0.5,x[1]-0.5,x[2]-0.5));  
+    } 
+  }
+
+  //--------------------------------------------------------------------------------
+  template <typename KSpace, typename Surfels>
+  void fillFacesFromSurfaceAndMap(KSpace const& aK, Surfels const& aSurfelVector) {
+  
+    for (const auto& s: aSurfelVector) {
+
+      auto surfelVertices = SH3::getPrimalVertices(aK, s, true);
+      std::vector<std::size_t> surfelIndices; 
+      for (const auto& v: surfelVertices) {
+	auto it = myMap.find( aK.uCoords(v) );
+	assert(it != myMap.end());
+	surfelIndices.push_back(it->second); 
+      }
+
+      myFaces.push_back( surfelIndices ); 
+    }
+ 
+  }
+
+    
+};
+
+
+#endif

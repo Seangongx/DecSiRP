@@ -1,0 +1,289 @@
+#include <Eigen/Sparse>
+#include <Eigen/SparseCholesky>
+
+#include <array>
+#include <vector>
+#include <unordered_map>
+#include <unordered_set>
+#include <algorithm>
+#include <cmath>
+#include <limits>
+#include <stdexcept>
+
+struct DualEdge
+{
+    std::size_t f0;
+    std::size_t f1;
+    double weight;
+};
+
+struct EdgeKey
+{
+    std::size_t a;
+    std::size_t b;
+
+    EdgeKey(std::size_t i, std::size_t j)
+    {
+        if (i < j) {
+            a = i;
+            b = j;
+        } else {
+            a = j;
+            b = i;
+        }
+    }
+
+    bool operator==(const EdgeKey& other) const
+    {
+        return a == other.a && b == other.b;
+    }
+};
+
+struct EdgeKeyHash
+{
+    std::size_t operator()(const EdgeKey& e) const
+    {
+        return std::hash<std::size_t>{}(e.a)
+             ^ (std::hash<std::size_t>{}(e.b) << 1);
+    }
+};
+
+std::vector<DualEdge>
+buildDualGraph(
+    const std::vector<std::vector<std::size_t>>& facets)
+{
+    struct EdgeInfo
+    {
+        std::size_t facet;
+    };
+
+    std::unordered_map<EdgeKey, EdgeInfo, EdgeKeyHash> edgeMap;
+
+    std::vector<DualEdge> dualEdges;
+
+    for (std::size_t f = 0; f < facets.size(); ++f)
+    {
+        const auto& facet = facets[f];
+
+        // Une facette doit avoir au moins 3 sommets.
+        if (facet.size() < 3)
+            continue;
+
+        for (std::size_t i = 0; i < facet.size(); ++i)
+        {
+            const std::size_t a = facet[i];
+            const std::size_t b = facet[(i + 1) % facet.size()];
+
+            EdgeKey edge(a, b);
+
+            auto it = edgeMap.find(edge);
+
+            if (it == edgeMap.end())
+            {
+                // Première facette rencontrée contenant cette arête.
+                edgeMap.emplace(edge, EdgeInfo{f});
+            }
+            else
+            {
+                // Deux facettes partagent cette arête :
+                // création d'une arête dans le graphe dual.
+                dualEdges.push_back({
+                    it->second.facet,
+                    f,
+                    1.0
+                });
+            }
+        }
+    }
+
+    return dualEdges;
+}
+
+
+Eigen::SparseMatrix<double>
+buildLaplacian(
+    std::size_t n,
+    const std::vector<DualEdge>& edges)
+{
+    using Triplet = Eigen::Triplet<double>;
+
+    std::vector<Triplet> triplets;
+    triplets.reserve(3 * edges.size());
+
+    for (const auto& e : edges)
+    {
+        triplets.emplace_back(e.f0, e.f0,  e.weight);
+        triplets.emplace_back(e.f1, e.f1,  e.weight);
+
+        triplets.emplace_back(e.f0, e.f1, -e.weight);
+        triplets.emplace_back(e.f1, e.f0, -e.weight);
+    }
+
+    Eigen::SparseMatrix<double> L(n, n);
+
+    L.setFromTriplets(
+        triplets.begin(),
+        triplets.end());
+
+    return L;
+}
+
+//----------------------------------------------
+
+Eigen::VectorXd
+solveTargetedClustering(
+    const Eigen::SparseMatrix<double>& L,
+    const std::vector<int>& labels,
+    int targetLabel)
+{
+    const std::size_t n = labels.size();
+
+    std::vector<int> seeds;
+    std::vector<int> unknown;
+
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        if (labels[i] == 0)
+            unknown.push_back(static_cast<int>(i));
+        else
+            seeds.push_back(static_cast<int>(i));
+    }
+
+    const int nu = static_cast<int>(unknown.size());
+    const int ns = static_cast<int>(seeds.size());
+
+    Eigen::SparseMatrix<double> Luu(nu, nu);
+    Eigen::SparseMatrix<double> Lus(nu, ns);
+
+    std::vector<int> globalToUnknown(n, -1);
+    std::vector<int> globalToSeed(n, -1);
+
+    for (int i = 0; i < nu; ++i)
+        globalToUnknown[unknown[i]] = i;
+
+    for (int i = 0; i < ns; ++i)
+        globalToSeed[seeds[i]] = i;
+
+    std::vector<Eigen::Triplet<double>> tripletsUU;
+    std::vector<Eigen::Triplet<double>> tripletsUS;
+
+    for (int k = 0; k < L.outerSize(); ++k)
+    {
+        for (Eigen::SparseMatrix<double>::InnerIterator it(L, k);
+             it;
+             ++it)
+        {
+            const int i = it.row();
+            const int j = it.col();
+
+            if (globalToUnknown[i] >= 0 &&
+                globalToUnknown[j] >= 0)
+            {
+                tripletsUU.emplace_back(
+                    globalToUnknown[i],
+                    globalToUnknown[j],
+                    it.value());
+            }
+            else if (globalToUnknown[i] >= 0 &&
+                     globalToSeed[j] >= 0)
+            {
+                tripletsUS.emplace_back(
+                    globalToUnknown[i],
+                    globalToSeed[j],
+                    it.value());
+            }
+        }
+    }
+
+    Luu.setFromTriplets(
+        tripletsUU.begin(),
+        tripletsUU.end());
+
+    Lus.setFromTriplets(
+        tripletsUS.begin(),
+        tripletsUS.end());
+
+    Eigen::VectorXd xs(ns);
+
+    for (int i = 0; i < ns; ++i)
+    {
+        xs[i] = (labels[seeds[i]] == targetLabel)
+              ? 1.0
+              : 0.0;
+    }
+
+    Eigen::VectorXd rhs = -Lus * xs;
+
+    Eigen::SimplicialLDLT<Eigen::SparseMatrix<double>> solver;
+
+    solver.compute(Luu);
+
+    if (solver.info() != Eigen::Success)
+        throw std::runtime_error(
+            "Impossible de factoriser Luu.");
+
+    Eigen::VectorXd xu = solver.solve(rhs);
+
+    if (solver.info() != Eigen::Success)
+        throw std::runtime_error(
+            "Impossible de résoudre le système.");
+
+    Eigen::VectorXd x(n);
+
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        if (labels[i] != 0)
+            x[i] = (labels[i] == targetLabel)
+                 ? 1.0
+                 : 0.0;
+        else
+            x[i] = xu[globalToUnknown[i]];
+    }
+
+    return x;
+}
+
+std::vector<int>
+targetedClustering(
+    const Eigen::SparseMatrix<double>& L,
+    const std::vector<int>& seeds,
+    int numberOfLabels,
+    double probThreshold = 0.8)
+{
+    const std::size_t n = seeds.size();
+
+    Eigen::MatrixXd probabilities(
+        static_cast<Eigen::Index>(n),
+        numberOfLabels);
+
+    for (int label = 1; label <= numberOfLabels; ++label)
+    {
+        probabilities.col(label - 1) =
+            solveTargetedClustering(
+                L,
+                seeds,
+                label);
+    }
+
+    std::vector<int> result(n, 0);
+
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        if (seeds[i] != 0)
+        {
+            result[i] = seeds[i];
+            continue;
+        }
+
+        Eigen::Index index;
+
+        double prob = probabilities.row(
+            static_cast<Eigen::Index>(i)
+        ).maxCoeff(&index);
+
+	if (prob >= probThreshold)
+	  result[i] = static_cast<int>(index) + 1;
+    }
+
+    return result;
+}
