@@ -197,7 +197,7 @@ public:
 
     //polyscope init
     DGtal::PolyscopeViewer viewer;
-
+    polyscope::loadColorMap("Random", "../random.png");
     setCameraSettings(cameraSettings); 
     polyscope::options::groundPlaneMode = polyscope::GroundPlaneMode::None;
 	
