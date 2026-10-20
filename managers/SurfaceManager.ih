@@ -105,24 +105,85 @@ public:
   }
   
   //--------------------------------------------------------------------------------
-  void buildFromImage(std::string const& file)
+  void buildFromImage(std::string const& file, double tring)
   {
-    //discrete surface
+    DGtal::trace.beginBlock( "Build from vol file" ); 
+
     typedef DGtal::ShortcutsGeometry<TKSpace> SHG3;
 
     auto params    = SH3::defaultParameters() | SHG3::defaultParameters();
+    params( "t-ring", tring );
     auto image     = SH3::makeBinaryImage( file, params );
     auto K         = SH3::getKSpace( image );
     auto surface   = SH3::makeLightDigitalSurface( image, K, params );
-
-    myDomain = image->domain();
+    auto surfels   = SH3::getSurfelRange( surface, params );
+    auto face_normals = SHG3::getCTrivialNormalVectors( surface, surfels, params );
+    //auto face_normals = SHG3::getIINormalVectors( surface, surfels, params );
     
-    buildMesh(K, surface);
+    myDomain = image->domain();
+    DGtal::trace.info() << myDomain << std::endl; 
 
-    // points
-    fillPointsFromCurrentMesh();
+    //mesh construction
+    std::set<Point> vertexSet; 
+    for (const auto& s: *surface) {
+      auto surfelVertices = SH3::getPrimalVertices(K, s, true);	
+      for (const auto& v: surfelVertices) {
+	vertexSet.insert(K.uCoords(v)); 
+      }
+    }
+    //vertices
+    for (auto it = vertexSet.begin(); it != vertexSet.end(); ++it) {
+      Point p = *it;
+      //embedding
+      RealPoint embedded((p[0]-0.5),
+			 (p[1]-0.5),
+			 (p[2]-0.5));
+      myVertices.push_back(embedded);
+      //map to retrieve the index from the integer point
+      myMap.emplace( p, myVertices.size()-1 ); 
+    }
+    //faces
+    for (const auto& s: *surface) {
+      auto surfelVertices = SH3::getPrimalVertices(K, s, true);	
 
-    std::cerr << "TODO normal estimation" << std::endl; 
+      std::vector<std::size_t> surfelIndices; 
+      for (const auto& v: surfelVertices) {
+	auto it = myMap.find( K.uCoords(v) );
+	assert(it != myMap.end());
+	surfelIndices.push_back(it->second); 
+      }
+      
+      myFaces.push_back( surfelIndices ); 
+    }
+    
+    DGtal::trace.info() << "Mesh"
+			<< " #" << myVertices.size() << " vertices"
+			<< " #" << myFaces.size() << " faces" << std::endl; 
+
+    // representative points = face barycenters
+    for (unsigned int i = 0; i < myFaces.size(); i++) {
+
+      std::vector<std::size_t> face = myFaces[i]; 
+
+      RealPoint p0 = myVertices[face[0]]; 
+      RealPoint p1 = myVertices[face[1]];
+      RealPoint p2 = myVertices[face[2]];
+      RealPoint p3 = myVertices[face[3]]; 
+      RealPoint x = (p0 + p1 + p2 + p3) / 4.0;
+      myPoints.push_back(x);
+    }
+
+    DGtal::trace.info() << " #" << myPoints.size() << " points" << std::endl; 
+
+    // normals
+    myNormals.reserve(face_normals.size());
+    for (auto n: face_normals)
+      myNormals.push_back(-n);
+
+    DGtal::trace.info() << " #" << myNormals.size() << " normals" << std::endl; 
+
+    DGtal::trace.endBlock(); 
+    
   }
 
   //--------------------------------------------------------------------------------

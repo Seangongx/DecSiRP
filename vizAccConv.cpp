@@ -95,10 +95,10 @@ public:
     show(cameraSettings); 
   }
   
-  void initFromImage(std::string const& file,  
+  void initFromImage(std::string const& file, double tring,   
 		     std::string const& cameraSettings = "")
   {
-    mySurface.buildFromImage( file );
+    mySurface.buildFromImage( file, tring );
     init();
     show(cameraSettings); 
   }
@@ -483,7 +483,8 @@ int main (int argc, char* argv[]) {
   double confThreshold = 0.01;
   double accThreshold = 5; 
   double distThreshold = 1.0;
-  double probThreshold = 0.8; 
+  double probThreshold = 0.8;
+  double tring = 3.0; 
   
   app.add_option("-l", maxLength, "maximal ray length");
   app.add_option("--beta", maxLength, "beta parameter of the softmax function");
@@ -491,6 +492,9 @@ int main (int argc, char* argv[]) {
   app.add_option("-c", confThreshold, "confidence threshold");
   app.add_option("-d", distThreshold, "distance threshold");
   app.add_option("--proba", probThreshold, "probability threshold");
+  auto tring_opt = app.add_option("-t", tring, "t-ring for the normal estimation");
+  m_opt->excludes(tring_opt);
+  p_opt->excludes(tring_opt); 
   
   std::string cameraSettings = ""; 
   app.add_option("-s", cameraSettings,
@@ -506,7 +510,7 @@ int main (int argc, char* argv[]) {
 		       distThreshold, probThreshold);
   
   if ( app.count("-i") != 0 ) {
-    pm.initFromImage(image, cameraSettings);
+    pm.initFromImage(image, tring, cameraSettings);
   } else if ( app.count("-m") != 0 ) {
     pm.initFromMesh(mesh, gridstep, cameraSettings);
   } else {
