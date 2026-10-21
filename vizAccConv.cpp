@@ -115,9 +115,9 @@ public:
 
     DGtal::trace.beginBlock( "Confidence scores" ); 
 
-    //myAcc->computeConfidenceScore(Accumulator<Domain>::ConfidenceMode::Base);
+    myAcc->computeConfidenceScore(Accumulator<Domain>::ConfidenceMode::Base);
     //myAcc->computeConfidenceScore(Accumulator<Domain>::ConfidenceMode::AlternativeA);
-    myAcc->computeConfidenceScore(Accumulator<Domain>::ConfidenceMode::AlternativeB, myBeta);
+    //myAcc->computeConfidenceScore(Accumulator<Domain>::ConfidenceMode::AlternativeB, myBeta);
 
     DGtal::trace.info() << myAcc->getConfidenceScores() << std::endl; 
 
