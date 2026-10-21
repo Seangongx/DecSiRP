@@ -1,0 +1,528 @@
+#include "DualGraphFromMesh.ih"
+
+//------------------------------------------------------------------------------
+Eigen::VectorXd
+solveTargetedClusteringFromConnectedGraph(
+    const Eigen::SparseMatrix<double>& L,
+    const std::vector<int>& labels,
+    int targetLabel)
+{
+    const std::size_t n = labels.size();
+
+    std::vector<int> seeds;
+    std::vector<int> unknown;
+
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        if (labels[i] == 0)
+            unknown.push_back(static_cast<int>(i));
+        else
+            seeds.push_back(static_cast<int>(i));
+    }
+
+    const int nu = static_cast<int>(unknown.size());
+    const int ns = static_cast<int>(seeds.size());
+
+    Eigen::SparseMatrix<double> Luu(nu, nu);
+    Eigen::SparseMatrix<double> Lus(nu, ns);
+
+    std::vector<int> globalToUnknown(n, -1);
+    std::vector<int> globalToSeed(n, -1);
+
+    for (int i = 0; i < nu; ++i)
+        globalToUnknown[unknown[i]] = i;
+
+    for (int i = 0; i < ns; ++i)
+        globalToSeed[seeds[i]] = i;
+
+    std::vector<Eigen::Triplet<double>> tripletsUU;
+    std::vector<Eigen::Triplet<double>> tripletsUS;
+
+    for (int k = 0; k < L.outerSize(); ++k)
+    {
+        for (Eigen::SparseMatrix<double>::InnerIterator it(L, k);
+             it;
+             ++it)
+        {
+            const int i = it.row();
+            const int j = it.col();
+
+            if (globalToUnknown[i] >= 0 &&
+                globalToUnknown[j] >= 0)
+            {
+                tripletsUU.emplace_back(
+                    globalToUnknown[i],
+                    globalToUnknown[j],
+                    it.value());
+            }
+            else if (globalToUnknown[i] >= 0 &&
+                     globalToSeed[j] >= 0)
+            {
+                tripletsUS.emplace_back(
+                    globalToUnknown[i],
+                    globalToSeed[j],
+                    it.value());
+            }
+        }
+    }
+
+    Luu.setFromTriplets(
+        tripletsUU.begin(),
+        tripletsUU.end());
+
+    Lus.setFromTriplets(
+        tripletsUS.begin(),
+        tripletsUS.end());
+
+    Eigen::VectorXd xs(ns);
+
+    for (int i = 0; i < ns; ++i)
+    {
+        xs[i] = (labels[seeds[i]] == targetLabel)
+              ? 1.0
+              : 0.0;
+    }
+
+    Eigen::VectorXd rhs = -Lus * xs;
+
+    Eigen::SimplicialLDLT<Eigen::SparseMatrix<double>> solver;
+
+    solver.compute(Luu);
+
+    if (solver.info() != Eigen::Success)
+        throw std::runtime_error(
+            "Impossible de factoriser Luu.");
+
+    Eigen::VectorXd xu = solver.solve(rhs);
+
+    if (solver.info() != Eigen::Success)
+        throw std::runtime_error(
+            "Impossible de résoudre le système.");
+
+    Eigen::VectorXd x(n);
+
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        if (labels[i] != 0)
+            x[i] = (labels[i] == targetLabel)
+                 ? 1.0
+                 : 0.0;
+        else
+            x[i] = xu[globalToUnknown[i]];
+    }
+
+    return x;
+}
+
+
+//------------------------------------------------------------------------------
+std::vector<std::vector<std::size_t>>
+connectedComponents(
+    std::size_t n,
+    const std::vector<DualEdge>& edges)
+{
+    std::vector<std::vector<std::size_t>> adjacency(n);
+
+    for (const auto& e : edges)
+    {
+        adjacency[e.f0].push_back(e.f1);
+        adjacency[e.f1].push_back(e.f0);
+    }
+
+    std::vector<bool> visited(n, false);
+    std::vector<std::vector<std::size_t>> components;
+
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        if (visited[i])
+            continue;
+
+        components.emplace_back();
+        std::queue<std::size_t> queue;
+
+        queue.push(i);
+        visited[i] = true;
+
+        while (!queue.empty())
+        {
+            const auto u = queue.front();
+            queue.pop();
+
+            components.back().push_back(u);
+
+            for (const auto v : adjacency[u])
+            {
+                if (!visited[v])
+                {
+                    visited[v] = true;
+                    queue.push(v);
+                }
+            }
+        }
+    }
+
+    return components;
+}
+
+//------------------------------------------------------------------------------
+std::vector<bool>
+componentsWithSeeds(
+    std::size_t n,
+    const std::vector<DualEdge>& edges,
+    const std::vector<int>& labels)
+{
+    const auto components = connectedComponents(n, edges);
+
+    std::vector<bool> usable(n, false);
+
+    for (const auto& component : components)
+    {
+        bool hasSeed = false;
+
+        for (const auto f : component)
+        {
+            if (labels[f] != 0)
+            {
+                hasSeed = true;
+                break;
+            }
+        }
+
+        for (const auto f : component)
+            usable[f] = hasSeed;
+    }
+
+    return usable;
+}
+
+//------------------------------------------------------------------------------
+// We take into account the fact that there are connected components
+// without any seed. 
+Eigen::VectorXd
+solveTargetedClustering(
+    const Eigen::SparseMatrix<double>& L,
+    const std::vector<int>& labels,
+    int targetLabel)
+{
+    using Index = Eigen::Index;
+    using Triplet = Eigen::Triplet<double>;
+
+    const std::size_t n = labels.size();
+
+    // ------------------------------------------------------------
+    // 1. Vérification des entrées.
+    // ------------------------------------------------------------
+
+    if (L.rows() != static_cast<Index>(n) ||
+        L.cols() != static_cast<Index>(n))
+    {
+        throw std::invalid_argument(
+            "solveTargetedClustering: dimensions incompatibles.");
+    }
+
+    if (targetLabel == 0)
+    {
+        throw std::invalid_argument(
+            "solveTargetedClustering: le label 0 est reserve "
+            "aux facettes inconnues.");
+    }
+
+    // -1 : facette non segmentée (composante sans graine).
+    //  0 : graine d'une autre classe.
+    //  1 : graine de la classe cible.
+    Eigen::VectorXd x = Eigen::VectorXd::Constant(
+        static_cast<Index>(n), -1.0);
+
+    // ------------------------------------------------------------
+    // 2. Construire les composantes connexes du graphe.
+    //
+    // On utilise les coefficients hors diagonale du Laplacien.
+    // Deux sommets sont adjacents si L(i,j) est non nul.
+    // ------------------------------------------------------------
+
+    std::vector<std::vector<std::size_t>> adjacency(n);
+
+    for (Index k = 0; k < L.outerSize(); ++k)
+    {
+        for (Eigen::SparseMatrix<double>::InnerIterator it(L, k);
+             it;
+             ++it)
+        {
+            const Index i = it.row();
+            const Index j = it.col();
+
+            if (i == j || it.value() == 0.0)
+                continue;
+
+            adjacency[static_cast<std::size_t>(i)].push_back(
+                static_cast<std::size_t>(j));
+        }
+    }
+
+    // componentOf[f] donne l'identifiant de la composante de f.
+    std::vector<std::size_t> componentOf(n, n);
+    std::vector<bool> componentHasSeed;
+
+    std::queue<std::size_t> queue;
+
+    for (std::size_t start = 0; start < n; ++start)
+    {
+        if (componentOf[start] != n)
+            continue;
+
+        const std::size_t componentId =
+            componentHasSeed.size();
+
+        componentHasSeed.push_back(false);
+
+        componentOf[start] = componentId;
+        queue.push(start);
+
+        while (!queue.empty())
+        {
+            const std::size_t u = queue.front();
+            queue.pop();
+
+            if (labels[u] != 0)
+                componentHasSeed[componentId] = true;
+
+            for (const std::size_t v : adjacency[u])
+            {
+                if (componentOf[v] == n)
+                {
+                    componentOf[v] = componentId;
+                    queue.push(v);
+                }
+            }
+        }
+    }
+
+    // ------------------------------------------------------------
+    // 3. Construire les ensembles U et S.
+    //
+    // U : facettes inconnues appartenant à une composante
+    //     contenant au moins une graine.
+    //
+    // S : graines appartenant à ces mêmes composantes.
+    //
+    // Les autres composantes restent à -1 dans le résultat.
+    // ------------------------------------------------------------
+
+    std::vector<std::size_t> unknown;
+    std::vector<std::size_t> seeds;
+
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        const bool usable =
+            componentHasSeed[componentOf[i]];
+
+        if (!usable)
+            continue;
+
+        if (labels[i] == 0)
+        {
+            unknown.push_back(i);
+        }
+        else
+        {
+            seeds.push_back(i);
+
+            // Valeur imposée pour une graine.
+            x[static_cast<Index>(i)] =
+                (labels[i] == targetLabel) ? 1.0 : 0.0;
+        }
+    }
+
+    // Aucune inconnue à résoudre.
+    if (unknown.empty())
+        return x;
+
+    // Une composante contenant des inconnues et au moins une
+    // graine a nécessairement au moins une graine dans seeds.
+    if (seeds.empty())
+    {
+        throw std::runtime_error(
+            "solveTargetedClustering: aucune graine exploitable.");
+    }
+
+    // ------------------------------------------------------------
+    // 4. Construire les correspondances entre indices globaux
+    //    et indices locaux dans Luu et Lus.
+    // ------------------------------------------------------------
+
+    std::vector<Index> globalToUnknown(n, Index(-1));
+    std::vector<Index> globalToSeed(n, Index(-1));
+
+    for (std::size_t i = 0; i < unknown.size(); ++i)
+    {
+        globalToUnknown[unknown[i]] =
+            static_cast<Index>(i);
+    }
+
+    for (std::size_t i = 0; i < seeds.size(); ++i)
+    {
+        globalToSeed[seeds[i]] =
+            static_cast<Index>(i);
+    }
+
+    const Index nu = static_cast<Index>(unknown.size());
+    const Index ns = static_cast<Index>(seeds.size());
+
+    // ------------------------------------------------------------
+    // 5. Extraire les sous-matrices Luu et Lus.
+    //
+    // Luu : interactions entre facettes inconnues.
+    // Lus : interactions entre facettes inconnues et graines.
+    // ------------------------------------------------------------
+
+    std::vector<Triplet> tripletsUU;
+    std::vector<Triplet> tripletsUS;
+
+    for (Index k = 0; k < L.outerSize(); ++k)
+    {
+        for (Eigen::SparseMatrix<double>::InnerIterator it(L, k);
+             it;
+             ++it)
+        {
+            const Index i = it.row();
+            const Index j = it.col();
+
+            const Index ui =
+                globalToUnknown[static_cast<std::size_t>(i)];
+
+            if (ui < 0)
+                continue;
+
+            const Index uj =
+                globalToUnknown[static_cast<std::size_t>(j)];
+
+            const Index sj =
+                globalToSeed[static_cast<std::size_t>(j)];
+
+            if (uj >= 0)
+            {
+                tripletsUU.emplace_back(ui, uj, it.value());
+            }
+            else if (sj >= 0)
+            {
+                tripletsUS.emplace_back(ui, sj, it.value());
+            }
+        }
+    }
+
+    Eigen::SparseMatrix<double> Luu(nu, nu);
+    Eigen::SparseMatrix<double> Lus(nu, ns);
+
+    Luu.setFromTriplets(
+        tripletsUU.begin(), tripletsUU.end());
+
+    Lus.setFromTriplets(
+        tripletsUS.begin(), tripletsUS.end());
+
+    // ------------------------------------------------------------
+    // 6. Construire les valeurs imposées aux graines.
+    //
+    // x_s[i] = 1 si la graine appartient à la classe cible,
+    //           0 sinon.
+    // ------------------------------------------------------------
+
+    Eigen::VectorXd xs(ns);
+
+    for (Index i = 0; i < ns; ++i)
+    {
+        xs[i] =
+            (labels[seeds[static_cast<std::size_t>(i)]]
+                == targetLabel)
+            ? 1.0
+            : 0.0;
+    }
+
+    // ------------------------------------------------------------
+    // 7. Résoudre Luu * xu = -Lus * xs.
+    // ------------------------------------------------------------
+
+    const Eigen::VectorXd rhs = -Lus * xs;
+
+    Eigen::SimplicialLDLT<
+        Eigen::SparseMatrix<double>> solver;
+
+    solver.compute(Luu);
+
+    if (solver.info() != Eigen::Success)
+    {
+        throw std::runtime_error(
+            "solveTargetedClustering: impossible de factoriser Luu.");
+    }
+
+    const Eigen::VectorXd xu = solver.solve(rhs);
+
+    if (solver.info() != Eigen::Success || !xu.allFinite())
+    {
+        throw std::runtime_error(
+            "solveTargetedClustering: echec de la resolution.");
+    }
+
+    // ------------------------------------------------------------
+    // 8. Réinjecter les valeurs dans le vecteur global.
+    //
+    // Les graines ont déjà leur valeur imposée.
+    // Les composantes sans graine restent à -1.
+    // ------------------------------------------------------------
+
+    for (Index i = 0; i < nu; ++i)
+    {
+        x[static_cast<Index>(
+            unknown[static_cast<std::size_t>(i)])] = xu[i];
+    }
+
+    return x;
+}
+
+//------------------------------------------------------------------------------
+std::vector<int>
+targetedClustering(
+    const Eigen::SparseMatrix<double>& L,
+    const std::vector<int>& seeds,
+    int numberOfLabels,
+    double probThreshold = 0.8)
+{
+    const std::size_t n = seeds.size();
+
+    Eigen::MatrixXd probabilities(
+        static_cast<Eigen::Index>(n),
+        numberOfLabels);
+
+    for (int label = 1; label <= numberOfLabels; ++label)
+    {
+        probabilities.col(label - 1) =
+            solveTargetedClustering(
+                L,
+                seeds,
+                label);
+    }
+
+    std::vector<int> result(n, 0);
+
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        if (seeds[i] != 0)
+        {
+            result[i] = seeds[i];
+            continue;
+        }
+
+        Eigen::Index index;
+
+        double prob = probabilities.row(
+            static_cast<Eigen::Index>(i)
+        ).maxCoeff(&index);
+
+	if (prob < 0.0) 
+	  result[i] = 0; //facette dans une composante sans graine
+	
+	if (prob >= probThreshold)
+	  result[i] = static_cast<int>(index) + 1;
+    }
+
+    return result;
+}

@@ -20,7 +20,7 @@
 
 #include "Accumulator.ih"
 #include "InteriorVoxelComponents.ih"
-#include "targetedClustering/DualGraphFromManifoldMesh.ih"
+#include "targetedClustering/Filtering.ih"
 
 
 
@@ -63,7 +63,8 @@ public:
   float myConfidenceThreshold;
   int myAccumulationThreshold;
   float myDistThreshold;
-  float myProbThreshold; 
+  float myProbThreshold;
+  float myLambda; 
   //extra data for visualization
   std::vector<Point> myInteriorVoxels;
   std::map<int,int> myIdxIntVoxToIdxInfo; 
@@ -71,11 +72,11 @@ public:
   //--------------------------------------------------------------------------------
   //- ctor
   //--------------------------------------------------------------------------------
-  PolyscopeManager(double length, double beta, double accT, double confT, double dT, double probT):
+  PolyscopeManager(double length, double beta, double accT, double confT, double dT, double probT, double lambda):
     mySurface(), myAcc(nullptr), myClust(nullptr),
     myMaxLength(length), myBeta(beta), myAccumulationThreshold(accT),
-    myConfidenceThreshold(confT), myDistThreshold(dT), myProbThreshold(probT), 
-    myInteriorVoxels(), myIdxIntVoxToIdxInfo()
+    myConfidenceThreshold(confT), myDistThreshold(dT), myProbThreshold(probT),
+    myLambda(lambda), myInteriorVoxels(), myIdxIntVoxToIdxInfo()
   {
   }
 
@@ -186,7 +187,7 @@ public:
 			    dualEdges);
 
     //and segment
-    auto segmentation = targetedClustering(L, seeds, nn, myProbThreshold);
+    auto segmentation = targetedClustering(L, seeds, nn, myLambda, myProbThreshold);
 
     polyscope::getSurfaceMesh("Mesh")->addFaceScalarQuantity("Classes", segmentation); 
 
@@ -245,6 +246,7 @@ public:
 	redoClustering();  
       }
 
+      ImGui::SliderFloat("lambda ", &myLambda, 0.0, 1.0);
       ImGui::SliderFloat("prob. threshold", &myProbThreshold, 0.0, 1.0);
 
       if (ImGui::Button("expand")) {
@@ -483,8 +485,9 @@ int main (int argc, char* argv[]) {
   double confThreshold = 0.01;
   double accThreshold = 5; 
   double distThreshold = 1.0;
-  double probThreshold = 0.8;
+  double probThreshold = 0.001;
   double tring = 3.0; 
+  double lambda = 0.001;
   
   app.add_option("-l", maxLength, "maximal ray length");
   app.add_option("--beta", maxLength, "beta parameter of the softmax function");
@@ -492,6 +495,7 @@ int main (int argc, char* argv[]) {
   app.add_option("-c", confThreshold, "confidence threshold");
   app.add_option("-d", distThreshold, "distance threshold");
   app.add_option("--proba", probThreshold, "probability threshold");
+  app.add_option("--lambda", lambda, "lambda (for the filtering)");
   auto tring_opt = app.add_option("-t", tring, "t-ring for the normal estimation");
   m_opt->excludes(tring_opt);
   p_opt->excludes(tring_opt); 
@@ -506,8 +510,9 @@ int main (int argc, char* argv[]) {
 
   // polyscope session
   PolyscopeManager pm(maxLength, beta,
-		       accThreshold, confThreshold,
-		       distThreshold, probThreshold);
+		      accThreshold, confThreshold,
+		      distThreshold, probThreshold,
+		      lambda);
   
   if ( app.count("-i") != 0 ) {
     pm.initFromImage(image, tring, cameraSettings);

@@ -1,0 +1,140 @@
+// #include <Eigen/Core>
+// #include <Eigen/Sparse>
+// #include <Eigen/SparseCholesky>
+
+// #include <stdexcept>
+// #include <vector>
+// #include <cstddef>
+
+#include "DualGraphFromMesh.ih"
+
+//------------------------------------------------------------------------------
+// Construit un signal indicateur :
+//   1.0 sur les facettes de la classe targetLabel
+//   0.0 sur toutes les autres facettes
+//
+// labels[i] == 0 peut représenter une facette sans étiquette.
+// Toutes les facettes autres que les graines de targetLabel
+// reçoivent initialement la valeur 0.
+Eigen::VectorXd makeIndicatorSignal(
+    const std::vector<int>& labels,
+    int targetLabel)
+{
+    if (targetLabel == 0)
+        throw std::invalid_argument(
+            "targetLabel must be different from 0.");
+
+    Eigen::VectorXd s(labels.size());
+
+    for (std::size_t i = 0; i < labels.size(); ++i)
+        s[i] = (labels[i] == targetLabel) ? 1.0 : 0.0;
+
+    return s;
+}
+
+
+//------------------------------------------------------------------------------
+// Filtrage EBEM pour p = 2.
+//
+// Résout :
+//     (L + lambda I) x = lambda s
+//
+// L      : Laplacien creux du graphe dual
+// s      : signal initial
+// lambda : paramètre de fidélité au signal initial
+//
+// Retourne le signal filtré x.
+Eigen::VectorXd filterSignal(
+    const Eigen::SparseMatrix<double>& L,
+    const Eigen::VectorXd& s,
+    double lambda)
+{
+    if (L.rows() != L.cols())
+        throw std::invalid_argument(
+            "The Laplacian must be square.");
+
+    if (L.rows() != s.size())
+        throw std::invalid_argument(
+            "The signal size must match the Laplacian size.");
+
+    if (!(lambda > 0.0) || !std::isfinite(lambda))
+        throw std::invalid_argument(
+            "lambda must be positive and finite.");
+
+    // A = L + lambda I
+    Eigen::SparseMatrix<double> A = L;
+
+    for (Eigen::Index i = 0; i < A.rows(); ++i)
+        A.coeffRef(i, i) += lambda;
+
+    A.makeCompressed();
+
+    // Résolution du système creux symétrique défini positif.
+    Eigen::SimplicialLDLT<Eigen::SparseMatrix<double>> solver;
+
+    solver.compute(A);
+
+    if (solver.info() != Eigen::Success)
+        throw std::runtime_error(
+            "Failed to factorize L + lambda I.");
+
+    const Eigen::VectorXd b = lambda * s;
+    Eigen::VectorXd x = solver.solve(b);
+
+    if (solver.info() != Eigen::Success)
+        throw std::runtime_error(
+            "Failed to solve the filtering system.");
+
+    return x;
+}
+
+//------------------------------------------------------------------------------
+std::vector<int>
+targetedClustering(
+    const Eigen::SparseMatrix<double>& L,
+    const std::vector<int>& seeds,
+    int numberOfLabels,
+    double probThreshold = 0.8,
+    double lambda = 1.0)
+{
+    const std::size_t n = seeds.size();
+
+    Eigen::MatrixXd probabilities(
+        static_cast<Eigen::Index>(n),
+        numberOfLabels);
+
+    for (int label = 1; label <= numberOfLabels; ++label)
+    {
+      const Eigen::VectorXd s =
+	makeIndicatorSignal(seeds, label);
+      
+      probabilities.col(label - 1) =
+	filterSignal(L, s, lambda);
+    }
+
+    std::vector<int> result(n, 0);
+
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        if (seeds[i] != 0)
+	  { //on donne le label de la graine
+            result[i] = seeds[i];
+            continue;
+	  }
+
+	//si pas de graine, on attribue le label
+	//pour laquelle la valeur est plus proche de 1
+        Eigen::Index index;
+
+        double prob = probabilities.row(
+            static_cast<Eigen::Index>(i)
+        ).maxCoeff(&index);
+
+	
+	if (prob >= probThreshold)
+	  result[i] = static_cast<int>(index) + 1;
+    }
+
+    return result;
+}
+
