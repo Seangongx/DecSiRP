@@ -234,8 +234,8 @@ private:
         }
 
 	///
-	std::cout << "segments = "
-		  << rasterizedSegments.size() << std::endl;
+	// std::cout << "segments = "
+	// 	  << rasterizedSegments.size() << std::endl;
 
 	std::size_t nonEmpty = 0;
 	std::size_t totalVoxels = 0;
@@ -246,11 +246,11 @@ private:
 	  totalVoxels += s.size();
 	}
 
-	std::cout << "non-empty segments = "
-		  << nonEmpty << std::endl;
+	// std::cout << "non-empty segments = "
+	// 	  << nonEmpty << std::endl;
 
-	std::cout << "total rasterized voxels = "
-		  << totalVoxels << std::endl;
+	// std::cout << "total rasterized voxels = "
+	// 	  << totalVoxels << std::endl;
 	
     }
 
@@ -518,10 +518,10 @@ public:
 	  }
 	}
 
-	std::cout << "Base votes: non-zero = "
-		  << nonZero
-		  << ", max = "
-		  << maxConf << std::endl;
+	// std::cout << "Base votes: non-zero = "
+	// 	  << nonZero
+	// 	  << ", max = "
+	// 	  << maxConf << std::endl;
 	
     }
 

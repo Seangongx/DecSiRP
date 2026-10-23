@@ -194,7 +194,7 @@ public:
             myVoxels[index].origins.push_back(myOrigins[segmentId]);
 	  }
       }
-    std::cout << "kept voxels = " << nbKept << std::endl;
+    // std::cout << "kept voxels = " << nbKept << std::endl;
   }
 
   
@@ -322,8 +322,9 @@ public:
 	  
       }
 
-    std::cout << "interior voxels = " << nbIn << std::endl; 
-    std::cout << "far enough      = " << nbKept << std::endl; 
+    // std::cout << "interior voxels = " << nbIn << std::endl; 
+    // std::cout << "far enough      = " << nbKept << std::endl; 
+    std::cout << "Number of interior points = " << nbKept << std::endl; 
   }
 
 

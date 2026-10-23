@@ -88,8 +88,8 @@ public:
 		       bb.second*r + RealPoint::diagonal(2.0));
 
     DGtal::trace.info() << myDomain << std::endl; 
-    DGtal::trace.info() << " #" << myPoints.size() << " points" << std::endl; 
-    DGtal::trace.info() << " #" << myNormals.size() << " normals" << std::endl; 
+    // DGtal::trace.info() << " #" << myPoints.size() << " points" << std::endl; 
+    // DGtal::trace.info() << " #" << myNormals.size() << " normals" << std::endl; 
 
     //mesh copy
     myVertices.reserve(mesh.nbVertex());
@@ -101,6 +101,10 @@ public:
       myFaces.push_back(*it); 
     }
     
+    DGtal::trace.info() << "Mesh"
+			<< " #" << myVertices.size() << " vertices"
+			<< " #" << myFaces.size() << " faces" << std::endl; 
+
     DGtal::trace.endBlock(); 
   }
   
@@ -173,14 +177,14 @@ public:
       myPoints.push_back(x);
     }
 
-    DGtal::trace.info() << " #" << myPoints.size() << " points" << std::endl; 
+    //DGtal::trace.info() << " #" << myPoints.size() << " points" << std::endl; 
 
     // normals
     myNormals.reserve(face_normals.size());
     for (auto n: face_normals)
       myNormals.push_back(-n);
 
-    DGtal::trace.info() << " #" << myNormals.size() << " normals" << std::endl; 
+    //DGtal::trace.info() << " #" << myNormals.size() << " normals" << std::endl; 
 
     DGtal::trace.endBlock(); 
     

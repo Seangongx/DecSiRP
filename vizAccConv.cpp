@@ -108,22 +108,29 @@ public:
   void init() { 
 
     //computations
-    DGtal::trace.beginBlock( "Accumulation" ); 
+    DGtal::trace.beginBlock( "Step I" );
+    
+    //DGtal::trace.beginBlock( "Accumulation" ); 
 
     myAcc = new Accumulator(mySurface.myPoints, mySurface.myNormals, mySurface.myDomain, myMaxLength);
-    DGtal::trace.info() << myAcc->getImage() << std::endl; 
+    //DGtal::trace.info() << myAcc->getImage() << std::endl; 
 
-    DGtal::trace.beginBlock( "Confidence scores" ); 
+    //DGtal::trace.endBlock(); 
+
+    //DGtal::trace.beginBlock( "Confidence scores" ); 
 
     myAcc->computeConfidenceScore(Accumulator<Domain>::ConfidenceMode::Base);
     //myAcc->computeConfidenceScore(Accumulator<Domain>::ConfidenceMode::AlternativeA);
     //myAcc->computeConfidenceScore(Accumulator<Domain>::ConfidenceMode::AlternativeB, myBeta);
 
-    DGtal::trace.info() << myAcc->getConfidenceScores() << std::endl; 
+    //DGtal::trace.info() << myAcc->getConfidenceScores() << std::endl; 
+
+    //DGtal::trace.endBlock(); 
 
     DGtal::trace.endBlock(); 
 
     clustering(); 
+
   }
 
   //--------------------------------------------------------------------------------
@@ -138,7 +145,7 @@ public:
   //--------------------------------------------------------------------------------
   void clustering() {
     
-    DGtal::trace.beginBlock( "Clustering of interior voxels" ); 
+    DGtal::trace.beginBlock( "Step II" ); 
 
     auto keepVoxel = [&](const Point& p)
     {
@@ -151,7 +158,7 @@ public:
 			     myDistThreshold);
     
     DGtal::trace.info()
-      << "Number of connected components : "
+      << "Number of connected components = "
       << myClust->numberOfComponents()
       << std::endl;
 
@@ -168,6 +175,8 @@ public:
 
     //--------------------------------------------------------------------------------
   void expansion() {
+
+    DGtal::trace.beginBlock( "Step III" );
 
     int nn = myClust->numberOfComponents(); 
 
@@ -188,6 +197,8 @@ public:
 
     //and segment
     auto segmentation = targetedClustering(L, seeds, nn, myLambda, myProbThreshold);
+
+    DGtal::trace.endBlock(); 
 
     polyscope::getSurfaceMesh("Mesh")->addFaceScalarQuantity("Classes", segmentation); 
 
