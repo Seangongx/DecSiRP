@@ -26,10 +26,27 @@ cmake --build build
 ```
 
 ## Typical use
-
+### Without interface  
 ```bash
-./build/viz -m ../Samples/hand.obj
+./viz -m ../Samples/hand.obj  -l 15 -a 1 -c 0.5 -d 3 --proba 0.001 --lambda 0.75  --export-segmentation resSeg.obj
 ```
+You will obtain the resulting `reset.obj` file, that you can display from the meshViewer of [DGTalTools](https://github.com/DGtal-team/DGtalTools) project.
+```bash
+meshViewer  resSeg.obj
+```
+you will obtain:
+<p align="center">
+  <img src="doc/images/hand-result.png" width="500">
+</p>
+
+### With polyscope display
+```bash
+     ./viz -m ../Samples/hand.obj 
+```
+The interface allow to interact with the main three steps of the algorithm: 
+<p align="center">
+  <img src="doc/images/interFacehand.png" width="500">
+</p>
 
 
 ## Citation
