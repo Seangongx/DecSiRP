@@ -5,7 +5,10 @@
 #include <DGtal/helpers/StdDefs.h>
 #include <DGtal/helpers/Shortcuts.h>
 #include <DGtal/helpers/ShortcutsGeometry.h>
+#include <DGtal/shapes/Mesh.h>
 #include <DGtal/shapes/SurfaceMesh.h>
+#include <DGtal/io/colormaps/GradientColorMap.h>
+#include <DGtal/io/writers/MeshWriter.h>
 #include <DGtal/io/writers/SurfaceMeshWriter.h>
 #include <DGtal/io/viewers/PolyscopeViewer.h>
 
@@ -67,7 +70,8 @@ public:
   float myLambda; 
   //extra data for visualization
   std::vector<Point> myInteriorVoxels;
-  std::map<int,int> myIdxIntVoxToIdxInfo; 
+  std::map<int,int> myIdxIntVoxToIdxInfo;
+  std::vector<int> mySegmentation;
 
   //--------------------------------------------------------------------------------
   //- ctor
@@ -76,32 +80,33 @@ public:
     mySurface(), myAcc(nullptr), myClust(nullptr),
     myMaxLength(length), myBeta(beta), myAccumulationThreshold(accT),
     myConfidenceThreshold(confT), myDistThreshold(dT), myProbThreshold(probT),
-    myLambda(lambda), myInteriorVoxels(), myIdxIntVoxToIdxInfo()
+    myLambda(lambda), myInteriorVoxels(), myIdxIntVoxToIdxInfo(),
+    mySegmentation()
   {
   }
 
   void initFromPolynomial(std::string const& polynomial, double const& gridstep, 
-			  std::string const& cameraSettings = "")
+			  std::string const& cameraSettings = "", bool showInterface = true)
   {
     mySurface.buildFromPolynomial(polynomial, gridstep);
     init();
-    show(cameraSettings); 
+    if (showInterface) show(cameraSettings);
   }
 
   void initFromMesh(std::string const& file, double const& gridstep, 
-		    std::string const& cameraSettings = "")
+		    std::string const& cameraSettings = "", bool showInterface = true)
   {
     mySurface.buildFromMesh(file, gridstep);
     init();
-    show(cameraSettings); 
+    if (showInterface) show(cameraSettings);
   }
   
   void initFromImage(std::string const& file, double tring,   
-		     std::string const& cameraSettings = "")
+		     std::string const& cameraSettings = "", bool showInterface = true)
   {
     mySurface.buildFromImage( file, tring );
     init();
-    show(cameraSettings); 
+    if (showInterface) show(cameraSettings);
   }
 
   //--------------------------------------------------------------------------------
@@ -174,7 +179,7 @@ public:
   }
 
     //--------------------------------------------------------------------------------
-  void expansion() {
+  void expansion(bool interfaceShown = true) {
 
     DGtal::trace.beginBlock( "Step III" );
 
@@ -196,14 +201,45 @@ public:
 			    dualEdges);
 
     //and segment
-    auto segmentation = targetedClustering(L, seeds, nn, myLambda, myProbThreshold);
+    mySegmentation = targetedClustering(
+        L, seeds, nn, myProbThreshold, myLambda
+    );
 
     DGtal::trace.endBlock(); 
-
-    polyscope::getSurfaceMesh("Mesh")->addFaceScalarQuantity("Classes", segmentation); 
+    if (interfaceShown) {
+        auto classes =  polyscope::getSurfaceMesh("Mesh")->addFaceScalarQuantity("Classes", mySegmentation);
+        classes->setEnabled(true);
+    }
 
   }
   
+  //--------------------------------------------------------------------------------
+  void exportSegmentedMesh(const std::string& outputFileName) const {
+      typedef DGtal::GradientColorMap<int, DGtal::CMAP_VIRIDIS> ViridisColorMap;
+      
+      if (mySegmentation.size() != mySurface.myFaces.size()) {
+      DGtal::trace.error()
+          << "Run expansion before exporting the segmented mesh." << std::endl;
+      return;
+    }
+
+    const int maxClass = *std::max_element(
+        mySegmentation.cbegin(), mySegmentation.cend()
+    );
+     ViridisColorMap  colorMap(0, std::max(1, maxClass+1));
+    
+    DGtal::Mesh<RealPoint> exportMesh(true);
+    for (const auto& vertex : mySurface.myVertices) {
+      exportMesh.addVertex(vertex);
+    }
+    for (std::size_t i = 0; i < mySurface.myFaces.size(); ++i) {
+      exportMesh.addFace(mySurface.myFaces[i], colorMap(mySegmentation[i]));
+    }
+    if (!(exportMesh >> outputFileName)) {
+      DGtal::trace.error() << "Unable to export " << outputFileName << std::endl;
+    }
+  }
+
   //--------------------------------------------------------------------------------
   void show(std::string const& cameraSettings) { 
 
@@ -254,16 +290,22 @@ public:
       ImGui::SliderFloat("dist. threshold", &myDistThreshold, 0.0, 100.0);
       
       if (ImGui::Button("clustering")) {
-	redoClustering();  
+          redoClustering();
       }
 
-      ImGui::SliderFloat("lambda ", &myLambda, 0.0, 1.0);
       ImGui::SliderFloat("prob. threshold", &myProbThreshold, 0.0, 1.0);
+      ImGui::SliderFloat("lambda ", &myLambda, 0.0, 1.0);
 
       if (ImGui::Button("expand")) {
-	expansion();  
+          expansion(true);
+          polyscope::getSurfaceMesh("Faces / Interior Voxels")->setEnabled(false);
       }
-      
+      ImGui::Separator();
+      ImGui::Text("IO");
+      if (ImGui::Button("save segmented mesh in .obj")) {
+          exportSegmentedMesh("result.obj");
+      }
+      ImGui::SameLine();
     };
     
     viewer.show();
@@ -348,7 +390,12 @@ public:
 						 mySurface.myVertices,
 						 facesInteriorVoxels);
       fptr->addFaceScalarQuantity("Components", facesComponent); 
-    }    
+    }
+      polyscope::getSurfaceMesh("Faces / Interior Voxels")->setEnabled(true);
+      auto* mesh = polyscope::getSurfaceMesh("Mesh");
+      if (mesh->getQuantity("Classes") != nullptr) {
+          mesh->getQuantity("Classes")->setEnabled(false);
+      }
   }
   
   //--------------------------------------------------------------------------------
@@ -501,7 +548,7 @@ int main (int argc, char* argv[]) {
   double lambda = 0.001;
   
   app.add_option("-l", maxLength, "maximal ray length");
-  app.add_option("--beta", maxLength, "beta parameter of the softmax function");
+  app.add_option("--beta", beta, "beta parameter of the softmax function");
   app.add_option("-a", accThreshold, "accumulation threshold");
   app.add_option("-c", confThreshold, "confidence threshold");
   app.add_option("-d", distThreshold, "distance threshold");
@@ -515,9 +562,16 @@ int main (int argc, char* argv[]) {
   app.add_option("-s", cameraSettings,
 		 "name of a file storing the camera settings");
   
+  std::string segmentationOutput;
+  app.add_option("--export-segmentation", segmentationOutput,
+                 "run all segmentation steps and export the colored OBJ without the interface");
+
   app.get_formatter()->column_width(40);
   CLI11_PARSE(app, argc, argv);
   // END parse command line using CLI
+
+  const bool shouldExportSegmentation =
+      app.count("--export-segmentation") != 0;
 
   // polyscope session
   PolyscopeManager pm(maxLength, beta,
@@ -526,13 +580,18 @@ int main (int argc, char* argv[]) {
 		      lambda);
   
   if ( app.count("-i") != 0 ) {
-    pm.initFromImage(image, tring, cameraSettings);
+    pm.initFromImage(image, tring, cameraSettings, !shouldExportSegmentation);
   } else if ( app.count("-m") != 0 ) {
-    pm.initFromMesh(mesh, gridstep, cameraSettings);
+    pm.initFromMesh(mesh, gridstep, cameraSettings, !shouldExportSegmentation);
   } else {
-    pm.initFromPolynomial(polynomial, gridstep, cameraSettings);
+    pm.initFromPolynomial(polynomial, gridstep, cameraSettings,
+                          !shouldExportSegmentation);
   }
 
-  
+  if (shouldExportSegmentation) {
+    pm.expansion(false);
+    pm.exportSegmentedMesh(segmentationOutput);
+  }
+
   return 0;
 }
