@@ -390,7 +390,12 @@ public:
 						 mySurface.myVertices,
 						 facesInteriorVoxels);
       fptr->addFaceScalarQuantity("Components", facesComponent); 
-    }    
+    }
+      polyscope::getSurfaceMesh("Faces / Interior Voxels")->setEnabled(true);
+      auto* mesh = polyscope::getSurfaceMesh("Mesh");
+      if (mesh->getQuantity("Classes") != nullptr) {
+          mesh->getQuantity("Classes")->setEnabled(false);
+      }
   }
   
   //--------------------------------------------------------------------------------
@@ -543,7 +548,7 @@ int main (int argc, char* argv[]) {
   double lambda = 0.001;
   
   app.add_option("-l", maxLength, "maximal ray length");
-  app.add_option("--beta", maxLength, "beta parameter of the softmax function");
+  app.add_option("--beta", beta, "beta parameter of the softmax function");
   app.add_option("-a", accThreshold, "accumulation threshold");
   app.add_option("-c", confThreshold, "confidence threshold");
   app.add_option("-d", distThreshold, "distance threshold");
