@@ -88,6 +88,13 @@ public:
   void initFromPolynomial(std::string const& polynomial, double const& gridstep, 
 			  std::string const& cameraSettings = "", bool showInterface = true)
   {
+      std::stringstream s;
+      s << "DecSiRP - ViAccConv : init from polynomial ";
+      s << " " <<  polynomial ;
+      polyscope::options::programName = s.str();
+      polyscope::options::groundPlaneMode = polyscope::GroundPlaneMode::None;
+      polyscope::view::setNavigateStyle(polyscope::NavigateStyle::Free);
+      
     mySurface.buildFromPolynomial(polynomial, gridstep);
     init();
     if (showInterface) show(cameraSettings);
@@ -96,6 +103,14 @@ public:
   void initFromMesh(std::string const& file, double const& gridstep, 
 		    std::string const& cameraSettings = "", bool showInterface = true)
   {
+      std::stringstream s;
+      s << "DecSiRP - ViAccConv : init from Mesh ";
+      std::string name = file.substr(file.find_last_of("/")+1,file.size()) ;
+      s << " " <<  name ;
+      polyscope::options::programName = s.str();
+      polyscope::options::groundPlaneMode = polyscope::GroundPlaneMode::None;
+      polyscope::view::setNavigateStyle(polyscope::NavigateStyle::Free);
+      
     mySurface.buildFromMesh(file, gridstep);
     init();
     if (showInterface) show(cameraSettings);
@@ -104,10 +119,18 @@ public:
   void initFromImage(std::string const& file, double tring,   
 		     std::string const& cameraSettings = "", bool showInterface = true)
   {
-    mySurface.buildFromImage( file, tring );
-    init();
-    if (showInterface) show(cameraSettings);
-  }
+      std::stringstream s;
+      s << "DecSiRP - ViAccConv : init from Image ";
+      std::string name = file.substr(file.find_last_of("/")+1,file.size()) ;
+      s << " " <<  name ;
+      polyscope::options::programName = s.str();
+      polyscope::options::groundPlaneMode = polyscope::GroundPlaneMode::None;
+      polyscope::view::setNavigateStyle(polyscope::NavigateStyle::Free);
+      
+      mySurface.buildFromImage( file, tring );
+      init();
+     if (showInterface) show(cameraSettings);
+   }
 
   //--------------------------------------------------------------------------------
   void init() { 
