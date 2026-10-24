@@ -8,7 +8,7 @@ Source code accompanying the paper by Xun Gong, Tristan Roussillon, and Bertrand
 
 - CMake >= 3.6
 - [DGtal](https://github.com/DGtal-team/DGtal) >= 2.1
-- [Polyscope]([https://polyscope.run/](https://github.com/nmwsharp/polyscope)) >= 2.4.0 *(optional, for 3D visualization through DGtal's PolyscopeViewer)*
+- [Polyscope](https://github.com/nmwsharp/polyscope) >= 2.4.0 *(optional, for 3D visualization through DGtal's PolyscopeViewer)*
 
 
 ## Build
