@@ -1,7 +1,7 @@
 FROM debian:trixie
 
 # install additional debian packages
-RUN apt-get update && apt-get install -y build-essential cmake libboost-all-dev m4 imagemagick libceres-dev libceres1 git curl bash libncurses5 clang libcurl4 libpython2.7 libpython2.7-dev binutils wget imagemagick gnuplot xvfb 
+RUN apt-get update && apt-get install -y build-essential cmake libboost-all-dev m4 imagemagick git curl bash libncurses5 clang  binutils wget imagemagick gnuplot xvfb 
 
 
 
