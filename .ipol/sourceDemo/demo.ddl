@@ -7,7 +7,7 @@
    "general": {
       "requirements": "docker",
       "demo_title": "Demonstration of A Voting Scheme for Decomposing Surfaces into Round Primitives",
-      "description": "<h4>A Voting Scheme for Decomposing Surfaces into Round Primitives</h4> <p>This demonstration show the algorithm to decompose surfaces into Round Primitives that is also available on tge GitHub repository: <a style='color:#0000BB' href=https://github.com/kerautret/xxx > here</a>.",
+      "description": "<h4>A Voting Scheme for Decomposing Surfaces into Round Primitives</h4> <p>This demonstration show the algorithm to decompose surfaces into Round Primitives that is also available on tge GitHub repository: <a style='color:#0000BB' href=https://github.com/Seangongx/DecSiRP > here</a>.",
       "input_description": [
          "Click on an image or upload one to use it as the algorithm input."
       ],
