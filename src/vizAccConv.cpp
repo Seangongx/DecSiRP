@@ -237,7 +237,9 @@ public:
   }
   
   //--------------------------------------------------------------------------------
-  void exportSegmentedMesh(const std::string& outputFileName) const {
+  void exportSegmentedMesh(const std::string& outputFileName,
+                           bool mergeMaterialFile = false) const {
+       
       typedef DGtal::GradientColorMap<int, DGtal::CMAP_VIRIDIS> ViridisColorMap;
       
       if (mySegmentation.size() != mySurface.myFaces.size()) {
@@ -256,12 +258,20 @@ public:
       exportMesh.addVertex(vertex);
     }
     for (std::size_t i = 0; i < mySurface.myFaces.size(); ++i) {
-      exportMesh.addFace(mySurface.myFaces[i], colorMap(mySegmentation[i]));
+        auto c =  colorMap(mySegmentation[i]);
+        // increase color global value
+        c = c * 1.5;
+        exportMesh.addFace(mySurface.myFaces[i], c);
     }
-      std::ofstream outMe;
-      std::ofstream outMa;
-      outMe.open(outputFileName);
-      DGtal::MeshWriter<RealPoint>::export2OBJ_colors(outMe, outMa, "", exportMesh);
+      if (mergeMaterialFile){
+          std::ofstream outMe;
+          std::ofstream outMa;
+          std::string outputFileNameMerge = outputFileName;
+          outputFileNameMerge.insert(outputFileNameMerge.find_last_of("."), "_mergeMat");
+          outMe.open(outputFileNameMerge);
+          DGtal::MeshWriter<RealPoint>::export2OBJ_colors(outMe, outMa, "", exportMesh);
+      }
+      exportMesh >> outputFileName;
   }
 
   //--------------------------------------------------------------------------------
@@ -571,7 +581,8 @@ int main (int argc, char* argv[]) {
   double probThreshold = 0.001;
   double tring = 3.0; 
   double lambda = 0.001;
-  
+  bool mergeMat = false;
+    
   app.add_option("-l", maxLength, "maximal ray length");
   app.add_option("--beta", beta, "beta parameter of the softmax function");
   app.add_option("-a", accThreshold, "accumulation threshold");
@@ -590,6 +601,7 @@ int main (int argc, char* argv[]) {
   std::string segmentationOutput;
   app.add_option("--export-segmentation", segmentationOutput,
                  "run all segmentation steps and export the colored OBJ without the interface");
+  app.add_flag("--mergeMat", mergeMat, "when export segmentation also export (--export-segmentation) a second version of the obj output is generated merging the material file. ");
 
   app.get_formatter()->column_width(40);
   CLI11_PARSE(app, argc, argv);
@@ -615,7 +627,7 @@ int main (int argc, char* argv[]) {
 
   if (shouldExportSegmentation) {
     pm.expansion(false);
-    pm.exportSegmentedMesh(segmentationOutput);
+    pm.exportSegmentedMesh(segmentationOutput, mergeMat);
   }
 
   return 0;
