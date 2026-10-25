@@ -31,6 +31,6 @@ echo "----------------------------------------"
 
 COMMANDCompute="viz -m  ${INPUT}  -l ${LENGTH} -a ${THRESHOLDACC} -c ${THRESHOLDCONF} -d ${DISTANCEMAX} --proba ${PROB} --lambda ${LAMBDA}
  --export-segmentation resultSeg.obj  "
-applyCommand COMMANDGem3Ddom_1 
+applyCommand COMMANDCompute
 
 
