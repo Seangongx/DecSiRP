@@ -413,12 +413,13 @@ public:
 						 mySurface.myVertices,
 						 facesInteriorVoxels);
       fptr->addFaceScalarQuantity("Components", facesComponent); 
+      fptr->setEnabled(true);
+        auto* mesh = polyscope::getSurfaceMesh("Mesh");
+        if (mesh->getQuantity("Classes") != nullptr) {
+            mesh->getQuantity("Classes")->setEnabled(false);
+        }
     }
-      polyscope::getSurfaceMesh("Faces / Interior Voxels")->setEnabled(true);
-      auto* mesh = polyscope::getSurfaceMesh("Mesh");
-      if (mesh->getQuantity("Classes") != nullptr) {
-          mesh->getQuantity("Classes")->setEnabled(false);
-      }
+     
   }
   
   //--------------------------------------------------------------------------------
