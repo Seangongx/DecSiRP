@@ -67,7 +67,7 @@ public:
   int myAccumulationThreshold;
   float myDistThreshold;
   float myProbThreshold;
-  float myLambda; 
+  float myRho;
   //extra data for visualization
   std::vector<Point> myInteriorVoxels;
   std::map<int,int> myIdxIntVoxToIdxInfo;
@@ -76,11 +76,11 @@ public:
   //--------------------------------------------------------------------------------
   //- ctor
   //--------------------------------------------------------------------------------
-  PolyscopeManager(double length, double beta, double accT, double confT, double dT, double probT, double lambda):
+  PolyscopeManager(double length, double beta, double accT, double confT, double dT, double probT, double rho):
     mySurface(), myAcc(nullptr), myClust(nullptr),
     myMaxLength(length), myBeta(beta), myAccumulationThreshold(accT),
     myConfidenceThreshold(confT), myDistThreshold(dT), myProbThreshold(probT),
-    myLambda(lambda), myInteriorVoxels(), myIdxIntVoxToIdxInfo(),
+    myRho(rho), myInteriorVoxels(), myIdxIntVoxToIdxInfo(),
     mySegmentation()
   {
   }
@@ -225,7 +225,7 @@ public:
 
     //and segment
     mySegmentation = targetedClustering(
-        L, seeds, nn, myProbThreshold, myLambda
+        L, seeds, nn, myProbThreshold, myRho
     );
 
     DGtal::trace.endBlock(); 
@@ -328,7 +328,7 @@ public:
       }
 
       ImGui::SliderFloat("prob. threshold", &myProbThreshold, 0.0, 1.0);
-      ImGui::SliderFloat("lambda ", &myLambda, 0.0, 1.0);
+      ImGui::SliderFloat("rho ", &myRho, 0.0, 1.0);
 
       if (ImGui::Button("expand")) {
           expansion(true);
@@ -580,7 +580,7 @@ int main (int argc, char* argv[]) {
   double distThreshold = 1.0;
   double probThreshold = 0.001;
   double tring = 3.0; 
-  double lambda = 0.001;
+  double rho = 0.001;
   bool mergeMat = false;
     
   app.add_option("-l", maxLength, "maximal ray length");
@@ -589,7 +589,7 @@ int main (int argc, char* argv[]) {
   app.add_option("-c", confThreshold, "confidence threshold");
   app.add_option("-d", distThreshold, "distance threshold");
   app.add_option("--proba", probThreshold, "probability threshold");
-  app.add_option("--lambda", lambda, "lambda (for the filtering)");
+  app.add_option("--rho", rho, "rho (to control label extension 1: no extension, 0 greater extension)");
   auto tring_opt = app.add_option("-t", tring, "t-ring for the normal estimation");
   m_opt->excludes(tring_opt);
   p_opt->excludes(tring_opt); 
@@ -614,7 +614,7 @@ int main (int argc, char* argv[]) {
   PolyscopeManager pm(maxLength, beta,
 		      accThreshold, confThreshold,
 		      distThreshold, probThreshold,
-		      lambda);
+		      rho);
   
   if ( app.count("-i") != 0 ) {
     pm.initFromImage(image, tring, cameraSettings, !shouldExportSegmentation);
