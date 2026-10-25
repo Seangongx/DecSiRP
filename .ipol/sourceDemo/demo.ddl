@@ -31,15 +31,29 @@
    "params": [
       {
          "id": "l",
-         "label": "l: the length of the segment for computing accumulation. ",
+         "label": "l: control the size of detectable structures (max size).",
          "type": "range",
          "visible": true,
-         "comments": "Set the maximal radius used to compute the accumulation.",
+         "comments": "it controls the maximal size of detectable feature (see d parameter for min size)",
          "values": {
             "default": 15,
             "max": 100,
             "min": 1,
             "step": 1
+         }
+      },
+
+     {
+         "id": "d",
+         "label": "d: control the size of detectable structures (min size).",
+         "type": "range",
+         "visible": true,
+         "comments": "it controls the minimal size of detectable feature (see l parameter for max size)",
+         "values": {
+            "default": 1,
+            "max": 100,
+            "min": 0,
+            "step": 0.01
          }
       },
     {
@@ -54,45 +68,61 @@
             "min": 1,
             "step": 1
          }
-      }
-   ],
-   "run": "bash $bin/.ipol/run.sh input_0.obj  ${maxRadius} ${thresholdAcc} ${compAcc} ${ajustScale} ${invNormals} ",
-   "results": [
-      {
-         "type": "html_text",
-         "contents": "The resulting compressed/decompressed files  are available below and the comparison of the reconstructed meshes with the input is possible through the 3d display that allows to display the input or result meshes with the size information. Note that the performance and execution time are available on output."
       },
-      {
-         "type": "gallery",
-         "contents": {
-            "Input": {
-               "img": "visuInput.png"
-            },
-            "Resulting max accumulation ": {
-               "img": "visuAccMax.png"
-            },
-            "Accumulation voxels values": {
-               "img": "visuAccVoxels.png",
-               "visible": "info.displayAcc==1"
-            }
+    {
+         "id": "c",
+         "label": "c: minimum confidence value to consider candidate voxel.",
+         "type": "range",
+         "visible": true,
+         "comments": "in general 0.5, increasing value to 1 reduce candidate with perfectly round area, while lower value is less selective.",
+         "values": {
+            "default": 0.5,
+            "max": 1,
+            "min": 0,
+            "step": 0.05
          }
       },
-      {
-         "contents": "'<br>Mesh visualisation :<br>' ",
-         "type": "html_text"
+     {
+         "id": "lambda",
+         "label": "λ: to govern the label extension process (from probabilty expansion value).",
+         "type": "range",
+         "visible": true,
+         "comments": "typically set to 10−3",
+         "values": {
+            "default": 0.001,
+            "max": 1,
+            "min": 0,
+            "step": 0.05
+         }
       },
-      {
-         "type": "html_text",
-         "contents": "info.url"
+        {
+         "id": "mu",
+         "label": "ρ: to govern the label extension process (behaviour).",
+         "type": "range",
+         "visible": true,
+         "comments": "1 means no extension, and the closer ρ is to 0, the greater the extension",
+         "values": {
+            "default": 0.5,
+            "max": 1,
+            "min": 0,
+            "step": 0.05
+         }
+      }
+     
+   ],
+   "run": "bash $bin/.ipol/run.sh input_0.obj  ${l} ${a} ${c} ${d} ${lambda} ${mu} ",
+   "results": [
+    {
+         "contents": "resultSeg.obj",
+         "type": "three_d",
+         "label": "3D output file"
       },
       {
          "type": "file_download",
          "label": "<h3> You can download resulting file here:</h3>",
          "contents": {
             "Input mesh": "input_0.obj",
-            "Input rendering": "visuInput.png",
-            "Accumulation voxels values": "visuAccVoxels.png",
-            "resultAcc.obj": "resultAcc.obj"
+            "Result segmentation": "resultSeg.obj"
          }
       },
       {
