@@ -30,13 +30,26 @@
    ],
    "params": [
       {
-         "id": "maxRadius",
-         "label": "Maximal radius used",
+         "id": "l",
+         "label": "l: the length of the segment for computing accumulation. ",
          "type": "range",
          "visible": true,
          "comments": "Set the maximal radius used to compute the accumulation.",
          "values": {
-            "default": 20,
+            "default": 15,
+            "max": 100,
+            "min": 1,
+            "step": 1
+         }
+      },
+    {
+         "id": "a",
+         "label": "a: minimum accumulation value to consider candidate voxel.",
+         "type": "range",
+         "visible": true,
+         "comments": "useful to remove spurious segments or unwanted regions",
+         "values": {
+            "default": 1,
             "max": 100,
             "min": 1,
             "step": 1
