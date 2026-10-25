@@ -96,7 +96,7 @@
          }
       },
         {
-         "id": "mu",
+         "id": "rho",
          "label": "ρ: to govern the label extension process (behaviour).",
          "type": "range",
          "visible": true,
@@ -110,10 +110,10 @@
       }
      
    ],
-   "run": "bash $bin/.ipol/run.sh input_0.obj  ${l} ${a} ${c} ${d} ${lambda} ${mu} ",
+   "run": "bash $bin/.ipol/run.sh input_0.obj  ${l} ${a} ${c} ${d} ${lambda} ${rho} ",
    "results": [
     {
-         "contents": "resultSeg.obj",
+         "contents": "resultSeg_mergeMat.obj",
          "type": "three_d",
          "label": "3D output file"
       },
@@ -122,7 +122,9 @@
          "label": "<h3> You can download resulting file here:</h3>",
          "contents": {
             "Input mesh": "input_0.obj",
-            "Result segmentation": "resultSeg.obj"
+             "Result segmentation (merge obj, mtl)": "resultSeg_mergeMat.obj",
+	     "Result segmentation (obj)": "resultSeg.obj",
+	     "Result segmentation (mtl)": "resultSeg.mtl"
          }
       },
       {

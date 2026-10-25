@@ -7,7 +7,7 @@ THRESHOLDACC=$3
 THRESHOLDCONF=$4
 DISTANCEMAX=$5
 LAMBDA=$6
-PROB=$7
+RHO=$7
 
 function applyCommand
 {
@@ -29,8 +29,8 @@ echo "----------------------------------------"
 echo "-----Computing segmentation-------------"
 echo "----------------------------------------"
 
-COMMANDCompute="viz -m  ${INPUT}  -l ${LENGTH} -a ${THRESHOLDACC} -c ${THRESHOLDCONF} -d ${DISTANCEMAX} --proba ${PROB} --lambda ${LAMBDA}
- --export-segmentation resultSeg.obj  "
+COMMANDCompute="viz -m  ${INPUT}  -l ${LENGTH} -a ${THRESHOLDACC} -c ${THRESHOLDCONF} -d ${DISTANCEMAX} --proba ${LAMBDA} --rho ${RHO}
+ --export-segmentation resultSeg.obj --mergeMat  "
 applyCommand COMMANDCompute
 
 
