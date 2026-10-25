@@ -258,9 +258,10 @@ public:
     for (std::size_t i = 0; i < mySurface.myFaces.size(); ++i) {
       exportMesh.addFace(mySurface.myFaces[i], colorMap(mySegmentation[i]));
     }
-    if (!(exportMesh >> outputFileName)) {
-      DGtal::trace.error() << "Unable to export " << outputFileName << std::endl;
-    }
+      std::ofstream outMe;
+      std::ofstream outMa;
+      outMe.open(outputFileName);
+      DGtal::MeshWriter<RealPoint>::export2OBJ_colors(outMe, outMa, "", exportMesh);
   }
 
   //--------------------------------------------------------------------------------
