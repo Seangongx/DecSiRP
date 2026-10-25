@@ -7,6 +7,8 @@ RUN apt-get update && apt-get install -y build-essential cmake libboost-all-dev 
 
 
 
+
+
 # copy the code to $bin
 ENV bin /workdir/bin/
 RUN mkdir -p $bin
