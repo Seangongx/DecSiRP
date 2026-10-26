@@ -29,8 +29,7 @@ echo "----------------------------------------"
 echo "-----Computing segmentation-------------"
 echo "----------------------------------------"
 
-COMMANDCompute="viz -m  ${INPUT}  -l ${LENGTH} -a ${THRESHOLDACC} -c ${THRESHOLDCONF} -d ${DISTANCEMAX} --proba ${LAMBDA} --rho ${RHO}
- --export-segmentation resultSeg.obj --mergeMat  "
+COMMANDCompute="viz -m  ${INPUT}  -l ${LENGTH} -a ${THRESHOLDACC} -c ${THRESHOLDCONF} -d ${DISTANCEMAX} --lambda ${LAMBDA} --rho ${RHO} --export-segmentation resultSeg.obj --mergeMat  "
 applyCommand COMMANDCompute
 
 
