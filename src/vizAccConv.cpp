@@ -62,7 +62,7 @@ public:
   Clustering* myClust;             //clustering
   //and associated parameters
   float myMaxLength;
-  float myBeta;
+ // float myBeta;
   float myConfidenceThreshold;
   int myAccumulationThreshold;
   float myDistThreshold;
@@ -78,7 +78,7 @@ public:
   //--------------------------------------------------------------------------------
   PolyscopeManager(double length, double beta, double accT, double confT, double dT, double lambdaT, double rho):
     mySurface(), myAcc(nullptr), myClust(nullptr),
-    myMaxLength(length), myBeta(beta), myAccumulationThreshold(accT),
+    myMaxLength(length), myAccumulationThreshold(accT),
     myConfidenceThreshold(confT), myDistThreshold(dT), myLambda(lambdaT),
     myRho(rho), myInteriorVoxels(), myIdxIntVoxToIdxInfo(),
     mySegmentation()
@@ -225,7 +225,7 @@ public:
 
     //and segment
     mySegmentation = targetedClustering(
-        L, seeds, nn, myLambda, myRho
+        L, seeds, nn, myRho, myLambda 
     );
 
     DGtal::trace.endBlock(); 
@@ -311,29 +311,39 @@ public:
       if (ImGui::Button("getViewAsJson")) {
           std::cout << polyscope::view::getViewAsJson() << std::endl;
       }
-      
+      ImGui::Separator();
+      ImGui::Text("Step 1: accumulation computation");
+
       ImGui::SliderFloat("length", &myMaxLength, 1.0, 100.0);
-      ImGui::SliderFloat("beta  ", &myBeta, 1.0, 100.0);
+//      ImGui::SliderFloat("beta  ", &myBeta, 1.0, 100.0);
 
       if (ImGui::Button("reset (acc/conf)")) {
-	reset();
+          reset();
       }
-      
+      ImGui::Separator();
+      ImGui::Text("Step 2: cluster interior voxel");
+   
       ImGui::SliderInt("Acc.  threshold", &myAccumulationThreshold, 1, 100);
       ImGui::SliderFloat("Conf. threshold", &myConfidenceThreshold, 0.001, 1.0);
-      ImGui::SliderFloat("dist. threshold", &myDistThreshold, 0.0, 100.0);
-      
+      ImGui::SliderFloat("Dist. threshold", &myDistThreshold, 0.0, 100.0);
+
       if (ImGui::Button("clustering")) {
           redoClustering();
       }
 
-      ImGui::SliderFloat("lambda - prob. threshold", &myLambda, 0.0, 1.0);
-      ImGui::SliderFloat("rho ", &myRho, 0.0, 1.0);
+      ImGui::Separator();
+      ImGui::Text("Step 3: extension");
+      ImGui::SliderFloat("lambda", &myLambda, 0.01f, 1.0f);
+      ImGui::SliderFloat("rho - prob. threshold ", &myRho, 0.0f, 1.0f);
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.55f, 0.25f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.2f, 0.65f, 0.3f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.1f, 0.45f, 0.2f, 1.0f));
 
-      if (ImGui::Button("expand")) {
-          expansion(true);
-          polyscope::getSurfaceMesh("Faces / Interior Voxels")->setEnabled(false);
-      }
+        if (ImGui::Button("expand \xe2\x86\x90")) {
+            expansion(true);
+            polyscope::getSurfaceMesh("Faces / Interior Voxels")->setEnabled(false);
+        }
+        ImGui::PopStyleColor(3);
       ImGui::Separator();
       ImGui::Text("IO");
       if (ImGui::Button("save segmented mesh in .obj")) {
@@ -588,8 +598,8 @@ int main (int argc, char* argv[]) {
   app.add_option("-a", accThreshold, "accumulation threshold");
   app.add_option("-c", confThreshold, "confidence threshold");
   app.add_option("-d", distThreshold, "distance threshold");
-  app.add_option("--proba", lambda, "probability threshold");
-  app.add_option("--rho", rho, "rho (to control label extension 1: no extension, 0 greater extension)");
+  app.add_option("--lambda", lambda, "control label diffusion process: near 1 limits extension, neaer 0 for maximal extension.");
+  app.add_option("--rho", rho, "probability threshold used in the label diffusion process. ");
   auto tring_opt = app.add_option("-t", tring, "t-ring for the normal estimation");
   m_opt->excludes(tring_opt);
   p_opt->excludes(tring_opt); 
