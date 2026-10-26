@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout DecSiRP
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            libgl-dev \
+            libboost-all-dev \
+            libx11-dev \
+            libxrandr-dev \
+            libxinerama-dev \
+            libxcursor-dev \
+            libxi-dev \
+            m4 \
+            imagemagick \
+            git \
+            curl \
+            bash \
+            clang \
+            binutils \
+            wget \
+            gnuplot \
+            xvfb
+
+      - name: Clone DGtal
+        run: |
+          git clone https://github.com/kerautret/DGtal.git ../DGtal
+
+      - name: Build DGtal
+        run: |
+          cmake -S ../DGtal -B ../DGtal/build \
+            -DCPM_USE_LOCAL_PACKAGES=ON \
+            -DDGTAL_WITH_POLYSCOPE_VIEWER=ON \
+            -DBUILD_TESTING=OFF \
+            -DBUILD_EXAMPLES=OFF \
+            -DCMAKE_BUILD_TYPE=Release
+
+          cmake --build ../DGtal/build --parallel 2
+
+      - name: Configure DecSiRP
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DDGtal_DIR="${{ github.workspace }}/../DGtal/build"
+
+      - name: Build DecSiRP
+        run: |
+          cmake --build build --parallel 2
