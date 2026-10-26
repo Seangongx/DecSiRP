@@ -225,7 +225,7 @@ public:
 
     //and segment
     mySegmentation = targetedClustering(
-        L, seeds, nn, myLambda, myRho
+        L, seeds, nn, myRho, myLambda 
     );
 
     DGtal::trace.endBlock(); 
@@ -588,8 +588,8 @@ int main (int argc, char* argv[]) {
   app.add_option("-a", accThreshold, "accumulation threshold");
   app.add_option("-c", confThreshold, "confidence threshold");
   app.add_option("-d", distThreshold, "distance threshold");
-  app.add_option("--proba", lambda, "probability threshold");
-  app.add_option("--rho", rho, "rho (to control label extension 1: no extension, 0 greater extension)");
+  app.add_option("--lambda", lambda, "control label diffusion process: near 1 limits extension, neaer 0 for maximal extension.");
+  app.add_option("--rho", rho, "probability threshold used in the label diffusion process. ");
   auto tring_opt = app.add_option("-t", tring, "t-ring for the normal estimation");
   m_opt->excludes(tring_opt);
   p_opt->excludes(tring_opt); 

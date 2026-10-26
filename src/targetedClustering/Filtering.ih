@@ -94,7 +94,7 @@ targetedClustering(
     const Eigen::SparseMatrix<double>& L,
     const std::vector<int>& seeds,
     int numberOfLabels,
-    double probThreshold = 0.8,
+    double rho = 0.8,
     double lambda = 1.0)
 {
     const std::size_t n = seeds.size();
@@ -131,7 +131,7 @@ targetedClustering(
         ).maxCoeff(&index);
 
 	
-	if (prob >= probThreshold)
+	if (prob >= rho)
 	  result[i] = static_cast<int>(index) + 1;
     }
 
