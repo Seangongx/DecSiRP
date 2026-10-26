@@ -40,7 +40,7 @@ jobs:
 
       - name: Clone DGtal
         run: |
-          git clone https://github.com/kerautret/DGtal.git ../DGtal
+          git clone https://github.com/DGtal-team/DGtal.git ../DGtal
 
       - name: Build DGtal
         run: |
