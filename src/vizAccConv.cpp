@@ -321,18 +321,18 @@ public:
           reset();
       }
       ImGui::Separator();
-      ImGui::Text("Step 2: cluster step");
+      ImGui::Text("Step 2: cluster interior voxel");
    
       ImGui::SliderInt("Acc.  threshold", &myAccumulationThreshold, 1, 100);
       ImGui::SliderFloat("Conf. threshold", &myConfidenceThreshold, 0.001, 1.0);
-      ImGui::SliderFloat("dist. threshold", &myDistThreshold, 0.0, 100.0);
+      ImGui::SliderFloat("Dist. threshold", &myDistThreshold, 0.0, 100.0);
 
       if (ImGui::Button("clustering")) {
           redoClustering();
       }
 
       ImGui::Separator();
-      ImGui::Text("Step 3: expension");
+      ImGui::Text("Step 3: extension");
       ImGui::SliderFloat("lambda", &myLambda, 0.01f, 1.0f);
       ImGui::SliderFloat("rho - prob. threshold ", &myRho, 0.0f, 1.0f);
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.55f, 0.25f, 1.0f));
