@@ -311,30 +311,39 @@ public:
       if (ImGui::Button("getViewAsJson")) {
           std::cout << polyscope::view::getViewAsJson() << std::endl;
       }
-      
+      ImGui::Separator();
+      ImGui::Text("Step 1: accumulation computation");
+
       ImGui::SliderFloat("length", &myMaxLength, 1.0, 100.0);
       ImGui::SliderFloat("beta  ", &myBeta, 1.0, 100.0);
 
       if (ImGui::Button("reset (acc/conf)")) {
 	reset();
       }
-      
+      ImGui::Separator();
+      ImGui::Text("Step 2: cluster step");
+   
       ImGui::SliderInt("Acc.  threshold", &myAccumulationThreshold, 1, 100);
       ImGui::SliderFloat("Conf. threshold", &myConfidenceThreshold, 0.001, 1.0);
       ImGui::SliderFloat("dist. threshold", &myDistThreshold, 0.0, 100.0);
-      
+
       if (ImGui::Button("clustering")) {
           redoClustering();
       }
 
-
-      ImGui::SliderFloat("lambda", &myLambda, 0.0001f, 1.0f, "%.4f");
+      ImGui::Separator();
+      ImGui::Text("Step 3: expension");
+      ImGui::SliderFloat("lambda", &myLambda, 0.01f, 1.0f);
       ImGui::SliderFloat("rho - prob. threshold ", &myRho, 0.0f, 1.0f);
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.55f, 0.25f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.2f, 0.65f, 0.3f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.1f, 0.45f, 0.2f, 1.0f));
 
-      if (ImGui::Button("expand")) {
-          expansion(true);
-          polyscope::getSurfaceMesh("Faces / Interior Voxels")->setEnabled(false);
-      }
+        if (ImGui::Button("expand \xe2\x86\x90")) {
+            expansion(true);
+            polyscope::getSurfaceMesh("Faces / Interior Voxels")->setEnabled(false);
+        }
+        ImGui::PopStyleColor(3);
       ImGui::Separator();
       ImGui::Text("IO");
       if (ImGui::Button("save segmented mesh in .obj")) {
