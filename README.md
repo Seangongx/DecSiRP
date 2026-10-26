@@ -4,6 +4,8 @@
 
 Source code accompanying the paper by Xun Gong, Tristan Roussillon, and Bertrand Kerautret (*submitted*).
 
+[![CI](https://github.com/Seangongx/DecSiRP/actions/workflows/ci.yml/badge.svg)](https://github.com/Seangongx/DecSiRP/actions/workflows/ci.yml)
+
 ## Dependencies
 
 - CMake >= 3.6
