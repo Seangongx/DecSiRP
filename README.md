@@ -28,7 +28,7 @@ cmake --build build
 ## Typical use
 ### Without interface  
 ```bash
-./viz -m ../Samples/hand.obj  -l 15 -a 1 -c 0.5 -d 3 --proba 0.001 --lambda 0.75  --export-segmentation resSeg.obj
+./viz -m ../Samples/hand.obj  -l 15 -a 1 -c 0.5 -d 3 --rho 0.001 --lambda 0.75  --export-segmentation resSeg.obj
 ```
 You will obtain the resulting `reset.obj` file, that you can display from the meshViewer of [DGTalTools](https://github.com/DGtal-team/DGtalTools) project.
 ```bash
