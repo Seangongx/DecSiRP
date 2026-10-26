@@ -327,8 +327,9 @@ public:
           redoClustering();
       }
 
-      ImGui::SliderFloat("lambda - prob. threshold", &myLambda, 0.0, 1.0);
-      ImGui::SliderFloat("rho ", &myRho, 0.0, 1.0);
+
+      ImGui::SliderFloat("lambda", &myLambda, 0.0001f, 1.0f, "%.4f");
+      ImGui::SliderFloat("rho - prob. threshold ", &myRho, 0.0f, 1.0f);
 
       if (ImGui::Button("expand")) {
           expansion(true);
