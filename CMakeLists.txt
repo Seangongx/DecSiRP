@@ -33,17 +33,17 @@ source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}"
              FILES ${SRC_FILES})
 
 
-add_executable(viz
-    src/vizAccConv.cpp
+add_executable(decSiRP
+    src/decSiRP.cpp
     ${SRC_FILES}
 )
 
 
-target_include_directories(viz PRIVATE
+target_include_directories(decSiRP PRIVATE
     ext
 )
 
-target_link_libraries(viz PRIVATE
+target_link_libraries(decSiRP PRIVATE
     DGtal::DGtal
 )
 
