@@ -62,7 +62,7 @@ public:
   Clustering* myClust;             //clustering
   //and associated parameters
   float myMaxLength;
-  float myBeta;
+ // float myBeta;
   float myConfidenceThreshold;
   int myAccumulationThreshold;
   float myDistThreshold;
@@ -78,7 +78,7 @@ public:
   //--------------------------------------------------------------------------------
   PolyscopeManager(double length, double beta, double accT, double confT, double dT, double lambdaT, double rho):
     mySurface(), myAcc(nullptr), myClust(nullptr),
-    myMaxLength(length), myBeta(beta), myAccumulationThreshold(accT),
+    myMaxLength(length), myAccumulationThreshold(accT),
     myConfidenceThreshold(confT), myDistThreshold(dT), myLambda(lambdaT),
     myRho(rho), myInteriorVoxels(), myIdxIntVoxToIdxInfo(),
     mySegmentation()
@@ -315,10 +315,10 @@ public:
       ImGui::Text("Step 1: accumulation computation");
 
       ImGui::SliderFloat("length", &myMaxLength, 1.0, 100.0);
-      ImGui::SliderFloat("beta  ", &myBeta, 1.0, 100.0);
+//      ImGui::SliderFloat("beta  ", &myBeta, 1.0, 100.0);
 
       if (ImGui::Button("reset (acc/conf)")) {
-	reset();
+          reset();
       }
       ImGui::Separator();
       ImGui::Text("Step 2: cluster step");
