@@ -12,7 +12,7 @@ RUN mkdir -p $bin
 WORKDIR $bin
 COPY . .
 RUN git clone  -b DecSiRPdemo https://github.com/kerautret/DGtal.git; cd DGtal; mkdir build; cd build; cmake .. -DCPM_USE_LOCAL_PACKAGES=ON  -DDGTAL_WITH_POLYSCOPE_VIEWER=true -DBUILD_TESTING=OFF -DBUILD_EXAMPLES=OFF -DCMAKE_BUILD_TYPE:string="Release" ; make;
-RUN git clone https://github.com/kerautret/DecSiRP.git; cd DecSiRP;  mkdir build &&  cd build; cmake .. -DCMAKE_BUILD_TYPE:string="Release" -DDGtal_DIR="$bin/DGtal/build"  && make  && cp viz $bin 
+RUN git clone https://github.com/kerautret/DecSiRP.git; cd DecSiRP;  mkdir build &&  cd build; cmake .. -DCMAKE_BUILD_TYPE:string="Release" -DDGtal_DIR="$bin/DGtal/build"  && make  && cp decSiRP $bin 
 
 
 # the execution will happen in the folder /workdir/exec
