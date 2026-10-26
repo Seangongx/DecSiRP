@@ -76,7 +76,7 @@ public:
   //--------------------------------------------------------------------------------
   //- ctor
   //--------------------------------------------------------------------------------
-  PolyscopeManager(double length, double beta, double accT, double confT, double dT, double lambdaT, double rho):
+  PolyscopeManager(double length,  double accT, double confT, double dT, double lambdaT, double rho):
     mySurface(), myAcc(nullptr), myClust(nullptr),
     myMaxLength(length), myAccumulationThreshold(accT),
     myConfidenceThreshold(confT), myDistThreshold(dT), myLambda(lambdaT),
@@ -501,7 +501,7 @@ public:
       if (selection.first != nullptr) {
 		
 	if (selection.first->getName() == "Interior Voxels") {
-	  auto idx = selection.second; 
+	  int idx = static_cast<int>(selection.second);
 	  std::clog << "# Select " << idx << "-th point in "
 		    << selection.first->getName() << ", " << selection.first->typeName() << std::endl;
 	  std::clog << "# point " << myInteriorVoxels[idx] << std::endl;
@@ -549,8 +549,7 @@ int main (int argc, char* argv[]) {
   // parse command line using CLI
   CLI::App app;
   
-  app.description("Visualization of accumulation values and confidence scores, \
- identification of interior and voxels and segmentation \n");
+  app.description("Apply the decomposition of surfaces into round primitives using the voting scheme method (decSiRP).\n");
 
   std::string polynomial = "2*x+6*y+15*z"; //or "x^2+y^2+2*z^2-x*y*z+z^3-100"
   auto polynomialList = DGtal::Shortcuts<DGtal::Z3i::KSpace>::getPolynomialList();  
@@ -584,7 +583,7 @@ int main (int argc, char* argv[]) {
 
   //parameters
   double maxLength = 5.0; 
-  double beta = 5.0;
+//  double beta = 5.0;
   double confThreshold = 0.01;
   double accThreshold = 5; 
   double distThreshold = 1.0;
@@ -594,12 +593,12 @@ int main (int argc, char* argv[]) {
   bool mergeMat = false;
     
   app.add_option("-l", maxLength, "maximal ray length");
-  app.add_option("--beta", beta, "beta parameter of the softmax function");
+//  app.add_option("--beta", beta, "beta parameter of the softmax function");
   app.add_option("-a", accThreshold, "accumulation threshold");
   app.add_option("-c", confThreshold, "confidence threshold");
   app.add_option("-d", distThreshold, "distance threshold");
-  app.add_option("--lambda", lambda, "control label diffusion process: near 1 limits extension, neaer 0 for maximal extension.");
-  app.add_option("--rho", rho, "probability threshold used in the label diffusion process. ");
+  app.add_option("--lambda", lambda, "Controls label extension: values close to 1 limit extension, while values close to 0 allow maximal extension.");
+  app.add_option("--rho", rho, "probability threshold for the label extension process. ");
   auto tring_opt = app.add_option("-t", tring, "t-ring for the normal estimation");
   m_opt->excludes(tring_opt);
   p_opt->excludes(tring_opt); 
@@ -610,9 +609,8 @@ int main (int argc, char* argv[]) {
   
   std::string segmentationOutput;
   app.add_option("--export-segmentation", segmentationOutput,
-                 "run all segmentation steps and export the colored OBJ without the interface");
-  app.add_flag("--mergeMat", mergeMat, "when export segmentation also export (--export-segmentation) a second version of the obj output is generated merging the material file. ");
-
+                 "Run all segmentation steps and export the colored OBJ without opening the interface.");
+    app.add_flag("--mergeMat", mergeMat, "When used with --export-segmentation, also export a second OBJ file with merged materials.");
   app.get_formatter()->column_width(40);
   CLI11_PARSE(app, argc, argv);
   // END parse command line using CLI
@@ -621,7 +619,7 @@ int main (int argc, char* argv[]) {
       app.count("--export-segmentation") != 0;
 
   // polyscope session
-  PolyscopeManager pm(maxLength, beta,
+  PolyscopeManager pm(maxLength,
 		      accThreshold, confThreshold,
 		      distThreshold, lambda,
 		      rho);
