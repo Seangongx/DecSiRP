@@ -20,12 +20,17 @@
    "inputs": [
       {
          "description": "input mesh file (<b>.obj only</b>)",
-         "required": true,
+         "required": false,
          "dtype": "x",
          "ext": ".obj",
-         "type": "data",
-         "max_pixels": "7000*7000",
-         "max_weight": "50*1024*1024"
+         "type": "data"
+      },
+      {
+         "description": "input volumetric file (<b>.vol only</b>)",
+         "required": false,
+         "dtype": "x",
+         "ext": ".vol",
+         "type": "data"
       }
    ],
    "params": [
@@ -120,7 +125,7 @@
          }
       }
    ],
-   "run": "bash $bin/.ipol/run.sh input_0.obj  ${l} ${a} ${c} ${d} ${lambda} ${rho} ",
+   "run": "bash $bin/.ipol/run.sh input_0.obj input_1.vol  ${l} ${a} ${c} ${d} ${lambda} ${rho} ",
    "results": [
       {
          "contents": "resultSeg_mergeMat.obj",
@@ -144,5 +149,3 @@
       }
    ]
 }
-
-
