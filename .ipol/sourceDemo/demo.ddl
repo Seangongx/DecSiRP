@@ -128,6 +128,20 @@
    "run": "bash $bin/.ipol/run.sh input_0.obj input_1.vol  ${l} ${a} ${c} ${d} ${lambda} ${rho} ",
    "results": [
       {
+         "type": "gallery",
+         "contents": {
+            "Input": {
+               "img": "visuInput.png"
+            },
+            "Output": {
+               "img": "visuResult.png"
+            },
+            "Interface": {
+               "img": "visuInterface.png"
+            }
+         }
+      },
+      {
          "contents": "resultSeg_mergeMat.obj",
          "type": "three_d",
          "label": "3D output file"
@@ -147,5 +161,28 @@
          "label": "Output",
          "type": "text_file"
       }
-   ]
+   ],
+   "archive": {
+      "enable_reconstruct": true,
+      "files": {
+         "input_0.obj": "Input image",
+         "resultSeg_mergeMat.obj": "mesh result",
+         "visuInput.png": "Input rendering",
+         "visuResult.png": "Result of segmentation ",
+         "visuInterface.png": "Interface visualisation",
+         "resultAcc.obj": "resultAcc.obj",
+         "stdout.txt": "Output"
+      },
+      "params": [
+         "l",
+         "a",
+         "c",
+         "d",
+         "lambda",
+         "rho"
+      ],
+      "info": {
+         "run_time": "run time"
+      }
+   }
 }
