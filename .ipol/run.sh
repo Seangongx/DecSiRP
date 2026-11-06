@@ -40,6 +40,7 @@ export DISPLAY=:1; Xvfb "$DISPLAY" -screen 0 1280x1024x24 &
 
 if test -f "${INPUT_MESH}"
 then
+    echo "inputType=MESH" >> algo_info.txt
     COMMANDUpdate="meshBasicEdit  ${INPUT_MESH}  --rescaleInterToCube 50 256 -o ${INPUT_MESH}"
     applyCommand COMMANDUpdate
 
@@ -52,13 +53,14 @@ then
     convert visuInput.png -fuzz 3% -trim +repage -resize 800x600 visuInput.png 2>&1
     convert visuResult.png -fuzz 3% -trim +repage -resize 800x600 visuResult.png 2>&1
     convert visuInterface.png -fuzz 3% -trim +repage -resize 800x600 visuInterface.png 2>&1
-    
+
 fi
 
 
 
 if test -f "${INPUT_IMAGE}"
 then
+    echo "inputType=VOL" >> algo_info.txt
     applyCommand COMMANDComputeVOL
     3dImageViewer ${INPUT_IMAGE} - 2>&1 |  while read -r line; do if [[ "$line" == "Image loaded:"* ]]; then sleep 2s; import -window root -display :1 -screen visuInput.png; pkill 3dImageViewer;  fi; done;
     meshViewer resultSeg.obj   2>&1 |  while read -r line; do if [[ $line == "[display ready]" ]] ; then sleep 1s; import -window root -display :1 -screen visuResult.png; pkill meshViewer;  fi; done;
