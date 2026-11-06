@@ -48,7 +48,7 @@ then
     echo "-----Computing segmentation from Mesh---"
     echo "----------------------------------------"
 
-    decSiRP -m "${INPUT_MESH}" -l "${LENGTH}" -a "${THRESHOLDACC}" -c "${THRESHOLDCONF}" -d "${DISTANCEMAX}" --lambda "${LAMBDA}" --rho "${RHO}" 2>&1 | while read -r line; do if [[ "$line" == "[display ready]" ]]; then sleep 1s; echo "import image.."; import -window root -display :1 -screen visuInterface.png; pkill decSiRP; fi; done;
+    decSiRP -m "${INPUT_MESH}" -l "${LENGTH}" -a "${THRESHOLDACC}" -c "${THRESHOLDCONF}" -d "${DISTANCEMAX}" --lambda "${LAMBDA}" --rho "${RHO}" 2>&1 | while read -r line; do echo $line;  if [[ "$line" == "[display ready]" ]]; then sleep 1s; echo "import image.."; import -window root -display :1 -screen visuInterface.png; pkill decSiRP; fi; done;
     echo "[done]"
     convert visuInput.png -fuzz 3% -trim +repage -resize 800x600 visuInput.png 2>&1
     convert visuResult.png -fuzz 3% -trim +repage -resize 800x600 visuResult.png 2>&1
