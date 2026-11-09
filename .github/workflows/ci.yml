@@ -46,6 +46,7 @@ jobs:
         run: |
           cmake -S ../DGtal -B ../DGtal/build \
             -DCPM_USE_LOCAL_PACKAGES=ON \
+            -DDGTAL_USE_LOCAL_BOOST=ON \
             -DDGTAL_WITH_POLYSCOPE_VIEWER=ON \
             -DBUILD_TESTING=OFF \
             -DBUILD_EXAMPLES=OFF \
