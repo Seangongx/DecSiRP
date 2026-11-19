@@ -75,15 +75,17 @@ Eigen::SparseMatrix<double> graphLaplacian(std::size_t n,
 }
 
 //------------------------------------------------------------------------------
-Eigen::VectorXd diffuse(const Eigen::SparseMatrix<double>& L,
-                        const Eigen::VectorXd& s, double lambda)
+Eigen::MatrixXd diffuse(const Eigen::SparseMatrix<double>& L,
+                        const Eigen::MatrixXd& S, double lambda)
 {
-  if (L.rows() != L.cols() || L.rows() != s.size())
+  if (L.rows() != L.cols() || L.rows() != S.rows())
     throw std::invalid_argument("diffuse: size mismatch.");
   if (!(lambda > 0.0) || !std::isfinite(lambda))
     throw std::invalid_argument("diffuse: lambda must be positive and finite.");
 
-  // L + lambda I is symmetric positive definite.
+  // L + lambda I is symmetric positive definite. It does not depend on the
+  // signals: it is factorized once, then all the columns of S are solved
+  // with this single factorization.
   Eigen::SparseMatrix<double> M = L;
   for (Eigen::Index i = 0; i < M.rows(); ++i)
     M.coeffRef(i, i) += lambda;
@@ -94,10 +96,10 @@ Eigen::VectorXd diffuse(const Eigen::SparseMatrix<double>& L,
   if (solver.info() != Eigen::Success)
     throw std::runtime_error("diffuse: failed to factorize L + lambda I.");
 
-  Eigen::VectorXd x = solver.solve(lambda * s);
+  Eigen::MatrixXd X = solver.solve(lambda * S);
   if (solver.info() != Eigen::Success)
-    throw std::runtime_error("diffuse: failed to solve (L + lambda I) x = lambda s.");
-  return x;
+    throw std::runtime_error("diffuse: failed to solve (L + lambda I) X = lambda S.");
+  return X;
 }
 
 //------------------------------------------------------------------------------
@@ -109,14 +111,13 @@ std::vector<int> extendLabels(const Eigen::SparseMatrix<double>& L,
   if (numberOfLabels <= 0)
     return seeds;
 
-  // Column l-1 contains x(l), the diffusion of the indicator vector s(l).
-  Eigen::MatrixXd x(n, numberOfLabels);
-  for (int l = 1; l <= numberOfLabels; ++l) {
-    Eigen::VectorXd s(n);
-    for (Eigen::Index i = 0; i < n; ++i)
-      s[i] = (seeds[i] == l) ? 1.0 : 0.0;
-    x.col(l - 1) = diffuse(L, s, lambda);
-  }
+  // Column l-1 of S is the indicator vector s(l); column l-1 of x is its
+  // diffusion x(l).
+  Eigen::MatrixXd S = Eigen::MatrixXd::Zero(n, numberOfLabels);
+  for (Eigen::Index i = 0; i < n; ++i)
+    if (seeds[i] != NoLabel)
+      S(i, seeds[i] - 1) = 1.0;
+  const Eigen::MatrixXd x = diffuse(L, S, lambda);
 
   std::vector<int> labels(seeds.size(), NoLabel);
   for (Eigen::Index i = 0; i < n; ++i) {

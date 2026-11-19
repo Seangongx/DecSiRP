@@ -34,17 +34,21 @@ Eigen::SparseMatrix<double> graphLaplacian(std::size_t n,
                                            const std::vector<DualEdge>& edges);
 
 /**
- * Diffuses the signal s by one implicit (backward Euler) step of time
- * t = 1/lambda, i.e. solves (L + lambda I) x = lambda s.
+ * Diffuses several signals by one implicit (backward Euler) step of time
+ * t = 1/lambda: for each column s of S, solves (L + lambda I) x = lambda s.
+ * The matrix L + lambda I is factorized only once.
+ *
+ * @return the matrix X whose columns are the diffused signals x.
  */
-Eigen::VectorXd diffuse(const Eigen::SparseMatrix<double>& L,
-                        const Eigen::VectorXd& s, double lambda);
+Eigen::MatrixXd diffuse(const Eigen::SparseMatrix<double>& L,
+                        const Eigen::MatrixXd& S, double lambda);
 
 /**
  * Extends a partial labeling to the whole graph.
  *
  * For each label l in {1, ..., numberOfLabels}, the indicator vector s(l)
- * (s(l)_i = 1 iff seeds[i] = l) is diffused into x(l). Then:
+ * (s(l)_i = 1 iff seeds[i] = l) is diffused into x(l), all labels sharing
+ * the same factorization of L + lambda I. Then:
  *  - a seeded node keeps its seed label;
  *  - any other node i receives argmax_l x(l)_i if max_l x(l)_i >= rho,
  *    and NoLabel otherwise.
