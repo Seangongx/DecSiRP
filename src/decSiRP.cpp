@@ -1,641 +1,95 @@
+/**
+ * @file decSiRP.cpp
+ * Command-line tool: decomposition of surfaces into round primitives.
+ *
+ * Implementation of the paper "A Voting Scheme for Decomposing Surfaces into
+ * Round Primitives", X. Gong, T. Roussillon, B. Kerautret.
+ */
+
 #include <iostream>
-#include <sstream>
+#include <string>
 
-#include <DGtal/base/Common.h>
-#include <DGtal/helpers/StdDefs.h>
-#include <DGtal/helpers/Shortcuts.h>
-#include <DGtal/helpers/ShortcutsGeometry.h>
-#include <DGtal/shapes/Mesh.h>
-#include <DGtal/shapes/SurfaceMesh.h>
-#include <DGtal/io/colormaps/GradientColorMap.h>
-#include <DGtal/io/writers/MeshWriter.h>
-#include <DGtal/io/writers/SurfaceMeshWriter.h>
-#include <DGtal/io/viewers/PolyscopeViewer.h>
-
-//We use CLI11 to manage options
-//see https://github.com/CLIUtils/CLI11
-//and https://cliutils.gitlab.io/CLI11Tutorial/
+// CLI11, see https://github.com/CLIUtils/CLI11
 #include "CLI11.hpp"
 
-//project-specific
-#define VERBOSE
-#include "managers/SurfaceManager.ih"
+#include "core/Decomposition.h"
+#include "core/InputSurface.h"
+#ifdef DECSIRP_WITH_VIEWER
+#include "viewer/Viewer.h"
+#endif
+
+int main(int argc, char* argv[])
+{
+  using namespace decsirp;
 
-#include "Accumulator.ih"
-#include "InteriorVoxelComponents.ih"
-#include "targetedClustering/Filtering.ih"
-
-
-
-//--------------------------------------------------------------------------------
-//-- main class
-//--------------------------------------------------------------------------------
-class PolyscopeManager {
-
-public: 
-  //--- useful types
-  typedef DGtal::Shortcuts<DGtal::Z3i::KSpace> SH3;
-  typedef SH3::KSpace KSpace; 
-  typedef SH3::Space Space;
-  typedef SH3::Domain Domain; 
-  typedef SH3::Point Point;
-  typedef SH3::Vector Vector;
-  typedef SH3::RealPoint RealPoint;
-  typedef SH3::RealVector RealVector;
-  typedef DGtal::SurfaceMesh< RealPoint, RealVector > Mesh;
-  typedef DGtal::SurfaceMeshWriter< RealPoint, RealVector > MeshWriter;
-  typedef std::size_t Index;
-  typedef std::vector< std::size_t > Indices;
-  
-  //--- Other useful alias
-  typedef std::set<Point> PointCloud;
-
-  using Image = ImageContainerBySTLVector<Domain, int>;
-  using Clustering =
-    InteriorVoxelComponents<Point, RealPoint>;
-
-  //--------------------------------------------------------------------------------
-  //- members of the main class
-  //--------------------------------------------------------------------------------
-  SurfaceManager<KSpace> mySurface; //surface
-  Accumulator<Domain>* myAcc;       //accumulator
-  Clustering* myClust;             //clustering
-  //and associated parameters
-  float myMaxLength;
- // float myBeta;
-  float myConfidenceThreshold;
-  int myAccumulationThreshold;
-  float myDistThreshold;
-  float myLambda;
-  float myRho;
-  //extra data for visualization
-  std::vector<Point> myInteriorVoxels;
-  std::map<int,int> myIdxIntVoxToIdxInfo;
-  std::vector<int> mySegmentation;
-
-  //--------------------------------------------------------------------------------
-  //- ctor
-  //--------------------------------------------------------------------------------
-  PolyscopeManager(double length,  double accT, double confT, double dT, double lambdaT, double rho):
-    mySurface(), myAcc(nullptr), myClust(nullptr),
-    myMaxLength(length), myAccumulationThreshold(accT),
-    myConfidenceThreshold(confT), myDistThreshold(dT), myLambda(lambdaT),
-    myRho(rho), myInteriorVoxels(), myIdxIntVoxToIdxInfo(),
-    mySegmentation()
-  {
-  }
-
-  void initFromPolynomial(std::string const& polynomial, double const& gridstep, 
-			  std::string const& cameraSettings = "", bool showInterface = true)
-  {
-      std::stringstream s;
-      s << "DecSiRP - ViAccConv : init from polynomial ";
-      s << " " <<  polynomial ;
-      polyscope::options::programName = s.str();
-      polyscope::options::groundPlaneMode = polyscope::GroundPlaneMode::None;
-      polyscope::view::setNavigateStyle(polyscope::NavigateStyle::Free);
-      
-    mySurface.buildFromPolynomial(polynomial, gridstep);
-    init();
-    if (showInterface) show(cameraSettings);
-  }
-
-  void initFromMesh(std::string const& file, double const& gridstep, 
-		    std::string const& cameraSettings = "", bool showInterface = true)
-  {
-      std::stringstream s;
-      s << "DecSiRP - ViAccConv : init from Mesh ";
-      std::string name = file.substr(file.find_last_of("/")+1,file.size()) ;
-      s << " " <<  name ;
-      polyscope::options::programName = s.str();
-      polyscope::options::groundPlaneMode = polyscope::GroundPlaneMode::None;
-      polyscope::view::setNavigateStyle(polyscope::NavigateStyle::Free);
-      
-    mySurface.buildFromMesh(file, gridstep);
-    init();
-    if (showInterface) show(cameraSettings);
-  }
-  
-  void initFromImage(std::string const& file, double tring,   
-		     std::string const& cameraSettings = "", bool showInterface = true)
-  {
-      std::stringstream s;
-      s << "DecSiRP - ViAccConv : init from Image ";
-      std::string name = file.substr(file.find_last_of("/")+1,file.size()) ;
-      s << " " <<  name ;
-      polyscope::options::programName = s.str();
-      polyscope::options::groundPlaneMode = polyscope::GroundPlaneMode::None;
-      polyscope::view::setNavigateStyle(polyscope::NavigateStyle::Free);
-      
-      mySurface.buildFromImage( file, tring );
-      init();
-     if (showInterface) show(cameraSettings);
-   }
-
-  //--------------------------------------------------------------------------------
-  void init() { 
-
-    //computations
-    DGtal::trace.beginBlock( "Step I" );
-    
-    //DGtal::trace.beginBlock( "Accumulation" ); 
-
-    myAcc = new Accumulator(mySurface.myPoints, mySurface.myNormals, mySurface.myDomain, myMaxLength);
-    //DGtal::trace.info() << myAcc->getImage() << std::endl; 
-
-    //DGtal::trace.endBlock(); 
-
-    //DGtal::trace.beginBlock( "Confidence scores" ); 
-
-    myAcc->computeConfidenceScore(Accumulator<Domain>::ConfidenceMode::Base);
-    //myAcc->computeConfidenceScore(Accumulator<Domain>::ConfidenceMode::AlternativeA);
-    //myAcc->computeConfidenceScore(Accumulator<Domain>::ConfidenceMode::AlternativeB, myBeta);
-
-    //DGtal::trace.info() << myAcc->getConfidenceScores() << std::endl; 
-
-    //DGtal::trace.endBlock(); 
-
-    DGtal::trace.endBlock(); 
-
-    clustering(); 
-
-  }
-
-  //--------------------------------------------------------------------------------
-  void reset() { 
-    delete(myAcc);
-    delete(myClust); 
-    init(); 
-    showAccConf();
-    showClusters(); 
-  }
-  
-  //--------------------------------------------------------------------------------
-  void clustering() {
-    
-    DGtal::trace.beginBlock( "Step II" ); 
-
-    auto keepVoxel = [&](const Point& p)
-    {
-      return myAcc->getImage()(p) >= myAccumulationThreshold
-        && myAcc->getConfidenceScores()(p) >= myConfidenceThreshold;
-    };
-    
-    myClust = new Clustering(mySurface.myPoints, myAcc->rasterizedSegments,
-			     mySurface.myVertices, mySurface.myFaces, keepVoxel,
-			     myDistThreshold);
-    
-    DGtal::trace.info()
-      << "Number of connected components = "
-      << myClust->numberOfComponents()
-      << std::endl;
-
-    DGtal::trace.endBlock(); 
-  }
-
-  //--------------------------------------------------------------------------------
-  void redoClustering() {
-    delete(myClust);
-    clustering();
-    showClusters(); 
-  }
-
-    //--------------------------------------------------------------------------------
-  void expansion(bool interfaceShown = true) {
-
-    DGtal::trace.beginBlock( "Step III" );
-
-    int nn = myClust->numberOfComponents(); 
-
-    //build seeds
-    std::vector<int> seeds(mySurface.myFaces.size(), 0);
-
-    auto callback = [&seeds](int faceIdx, int componentIdx) {
-      seeds[faceIdx] = componentIdx; 
-    };
-    myClust->getFacetsComponents(callback);
-
-    //build dual graph
-    auto dualEdges = buildDualGraph(mySurface.myFaces);
-
-    //the graph laplacian
-    auto L = buildLaplacian(mySurface.myFaces.size(),
-			    dualEdges);
-
-    //and segment
-    mySegmentation = targetedClustering(
-        L, seeds, nn, myRho, myLambda 
-    );
-
-    DGtal::trace.endBlock(); 
-    if (interfaceShown) {
-        auto classes =  polyscope::getSurfaceMesh("Mesh")->addFaceScalarQuantity("Classes", mySegmentation);
-        classes->setEnabled(true);
-    }
-
-  }
-  
-  //--------------------------------------------------------------------------------
-  void exportSegmentedMesh(const std::string& outputFileName,
-                           bool mergeMaterialFile = false) const {
-       
-      typedef DGtal::GradientColorMap<int, DGtal::CMAP_VIRIDIS> ViridisColorMap;
-      
-      if (mySegmentation.size() != mySurface.myFaces.size()) {
-      DGtal::trace.error()
-          << "Run expansion before exporting the segmented mesh." << std::endl;
-      return;
-    }
-
-    const int maxClass = *std::max_element(
-        mySegmentation.cbegin(), mySegmentation.cend()
-    );
-     ViridisColorMap  colorMap(0, std::max(1, maxClass+1));
-    
-    DGtal::Mesh<RealPoint> exportMesh(true);
-    for (const auto& vertex : mySurface.myVertices) {
-      exportMesh.addVertex(vertex);
-    }
-    for (std::size_t i = 0; i < mySurface.myFaces.size(); ++i) {
-        auto c =  colorMap(mySegmentation[i]);
-        // increase color global value
-        c = c * 1.5;
-        exportMesh.addFace(mySurface.myFaces[i], c);
-    }
-      if (mergeMaterialFile){
-          std::ofstream outMe;
-          std::ofstream outMa;
-          std::string outputFileNameMerge = outputFileName;
-          outputFileNameMerge.insert(outputFileNameMerge.find_last_of("."), "_mergeMat");
-          outMe.open(outputFileNameMerge);
-          DGtal::MeshWriter<RealPoint>::export2OBJ_colors(outMe, outMa, "", exportMesh);
-      }
-      exportMesh >> outputFileName;
-  }
-
-  //--------------------------------------------------------------------------------
-  void show(std::string const& cameraSettings) { 
-
-    //polyscope init
-    DGtal::PolyscopeViewer viewer;
-    polyscope::loadColorMap("Random", "random.png");
-    setCameraSettings(cameraSettings); 
-    polyscope::options::groundPlaneMode = polyscope::GroundPlaneMode::None;
-	
-    //mesh
-    auto surface = polyscope::registerSurfaceMesh("Mesh",
-						  mySurface.myVertices,
-						  mySurface.myFaces);
-
-    //points and normal
-    auto points = polyscope::registerPointCloud("Points",
-						mySurface.myPoints); 
-    points->addVectorQuantity("Normals", mySurface.myNormals); 
-    points->setEnabled(false);
-    
-    //acc/conf values
-    showAccConf();
-
-    //clusters
-    showClusters(); 
-    
-    //call back
-    polyscope::state::userCallback =  [&]() {
-
-      //---- mouse ----
-      ImGuiIO &io = ImGui::GetIO();
-      mouseSelection(io);
-
-      //buttons
-      if (ImGui::Button("getViewAsJson")) {
-          std::cout << polyscope::view::getViewAsJson() << std::endl;
-      }
-      ImGui::Separator();
-      ImGui::Text("Step 1: accumulation computation");
-
-      ImGui::SliderFloat("length", &myMaxLength, 1.0, 100.0);
-//      ImGui::SliderFloat("beta  ", &myBeta, 1.0, 100.0);
-
-      if (ImGui::Button("reset (acc/conf)")) {
-          reset();
-      }
-      ImGui::Separator();
-      ImGui::Text("Step 2: cluster interior voxel");
-   
-      ImGui::SliderInt("Acc.  threshold", &myAccumulationThreshold, 1, 100);
-      ImGui::SliderFloat("Conf. threshold", &myConfidenceThreshold, 0.001, 1.0);
-      ImGui::SliderFloat("Dist. threshold", &myDistThreshold, 0.0, 100.0);
-
-      if (ImGui::Button("clustering")) {
-          redoClustering();
-      }
-
-      ImGui::Separator();
-      ImGui::Text("Step 3: extension");
-      ImGui::SliderFloat("lambda", &myLambda, 0.01f, 1.0f);
-      ImGui::SliderFloat("rho - prob. threshold ", &myRho, 0.0f, 1.0f);
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.55f, 0.25f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.2f, 0.65f, 0.3f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.1f, 0.45f, 0.2f, 1.0f));
-
-        if (ImGui::Button("expand \xe2\x86\x90")) {
-            expansion(true);
-            polyscope::getSurfaceMesh("Faces / Interior Voxels")->setEnabled(false);
-        }
-        ImGui::PopStyleColor(3);
-      ImGui::Separator();
-      ImGui::Text("IO");
-      if (ImGui::Button("save segmented mesh in .obj")) {
-          exportSegmentedMesh("result.obj");
-      }
-      ImGui::SameLine();
-    };
-    
-    viewer.show();
-      
-  }
-
-  //--------------------------------------------------------------------------------
-  void showAccConf() {
-    
-    // register the grid
-    Point lb = mySurface.myDomain.lowerBound();
-    Point ub = mySurface.myDomain.upperBound();
-    Vector d = ub-lb + Point::diagonal(1); 
-    glm::uvec3 dims{d[0],d[1],d[2]}; 
-    glm::vec3 bound_low{lb[0]+0.5, lb[1]+0.5, lb[2]+0.5};
-    glm::vec3 bound_high{ub[0]+0.5, ub[1]+0.5, ub[2]+0.5};
-    uint32_t nData = d[0]*d[1]*d[2];
-    
-    auto grid = polyscope::registerVolumeGrid("Grid", dims, bound_low, bound_high);
-    grid->setEnabled(false); 
-
-    // add acc values
-    std::vector<float> vacc;
-    vacc.reserve(nData);
-    for (auto it = mySurface.myDomain.begin();
-	 it != mySurface.myDomain.end(); ++it) {
-      vacc.push_back(myAcc->getImage()(*it)); 
-    }
-    auto gridvacc = grid->addNodeScalarQuantity("Acc", vacc);
-    gridvacc->setEnabled(true);
-
-    // add conf values
-    std::vector<float> vconf;
-    vconf.reserve(nData);
-    for (auto it = mySurface.myDomain.begin();
-	 it != mySurface.myDomain.end(); ++it) {
-      vconf.push_back(myAcc->getConfidenceScores()(*it)); 
-    }
-    auto gridvconf = grid->addNodeScalarQuantity("Conf", vconf);
-    gridvconf->setEnabled(true);
-  
-  }
-
-  //--------------------------------------------------------------------------------
-  void showClusters() {
-
-    //clusters / interior voxels
-    myInteriorVoxels.clear();
-    myIdxIntVoxToIdxInfo.clear(); 
-      
-    std::vector<double> ds;
-    std::vector<int> cs; 
-    const auto& voxels = myClust->getVoxels();
-    for (std::size_t i = 0; i < voxels.size(); i++) {
-      auto v = voxels[i]; 
-      if (v.kept) {
-	myInteriorVoxels.push_back(v.voxel);
-	myIdxIntVoxToIdxInfo.emplace(myInteriorVoxels.size()-1, i); 
-	ds.push_back(v.distance);
-	cs.push_back(v.component); 
-      }
-    }
-
-    if (myInteriorVoxels.size() > 0) {
-      auto pc = polyscope::registerPointCloud("Interior Voxels", myInteriorVoxels); 
-      pc->addScalarQuantity("Distances", ds);
-      pc->addScalarQuantity("Components", cs);
-
-      //clusters / associated faces
-      std::vector<std::vector<std::size_t> > facesInteriorVoxels;
-      std::vector<int> facesComponent; 
-
-      auto callback = [this, &facesInteriorVoxels, &facesComponent](int faceIdx, int componentIdx) {
-	  facesInteriorVoxels.push_back(mySurface.myFaces[faceIdx]);
-	  facesComponent.push_back(componentIdx); 
-	};
-      myClust->getFacetsComponents(callback);      
-
-      std::cout << facesInteriorVoxels.size() << std::endl; 
-      std::cout << facesComponent.size() << std::endl; 
-      auto fptr = polyscope::registerSurfaceMesh("Faces / Interior Voxels",
-						 mySurface.myVertices,
-						 facesInteriorVoxels);
-      fptr->addFaceScalarQuantity("Components", facesComponent); 
-      fptr->setEnabled(true);
-        auto* mesh = polyscope::getSurfaceMesh("Mesh");
-        if (mesh->getQuantity("Classes") != nullptr) {
-            mesh->getQuantity("Classes")->setEnabled(false);
-        }
-    }
-    std::cout  << "[display ready]" << std::endl;   
-  }
-  
-  //--------------------------------------------------------------------------------
-  //- interaction
-  //--------------------------------------------------------------------------------
-
-  void isInterior(const Clustering::VoxelInfo& info) {
-    
-    std::vector<RealPoint> points;
-    points.reserve(info.origins.size() + 1);
-
-    //first point is info.voxel
-    points.push_back(RealPoint(info.voxel));
-
-    //others are vertices of associated facets
-    for (const auto& sidx : info.segments) {
-      auto face = mySurface.myFaces[sidx];
-      for (const auto& vidx : face) {
-	points.push_back(mySurface.myVertices[vidx]);
-      }
-    }
-
-    auto pc = polyscope::registerPointCloud("Input Points", points); 
-
-    if (points.size() > 2) {
-      
-      using Kernel3D = DGtal::ConvexHullRationalKernel<3>;
-      using QuickHull3D = DGtal::QuickHull<Kernel3D>;
-      Kernel3D kernel(1000);
-      QuickHull3D hull(kernel);
-
-      hull.setInput(points);
-      hull.computeConvexHull();
-
-      std::vector< RealPoint > positions;
-      hull.getVertexPositions( positions );
-      std::vector< std::vector< std::size_t > > facets;
-      hull.getFacetVertices( facets );
-      auto ch = polyscope::registerSurfaceMesh("Convex hull", positions, facets);    
-      QuickHull3D::IndexRange p2v;
-      hull.getPoint2Vertex( p2v );
-      std::cout << (p2v[hull.input2comp[0]] == QuickHull3D::UNASSIGNED) << std::endl; 
-
-    } else {
-      std::cout << "0" << std::endl; 
-    }
-  }
-  
-  //--------------------------------------------------------------------------------
-  void mouseSelection(ImGuiIO const& io) {
-
-    if (io.MouseDoubleClicked[0]) { // if the left mouse button was double-clicked
-
-      // get selection
-      std::pair<polyscope::Structure*, size_t> selection = 
-        polyscope::pick::evaluatePickQuery(io.MousePos.x, io.MousePos.y);
-
-      if (selection.first != nullptr) {
-		
-	if (selection.first->getName() == "Interior Voxels") {
-	  int idx = static_cast<int>(selection.second);
-	  std::clog << "# Select " << idx << "-th point in "
-		    << selection.first->getName() << ", " << selection.first->typeName() << std::endl;
-	  std::clog << "# point " << myInteriorVoxels[idx] << std::endl;
-	  auto it = myIdxIntVoxToIdxInfo.find(idx);
-	  if (it != myIdxIntVoxToIdxInfo.end()) {
-	    auto v = myClust->myVoxels[it->second]; 
-	    std::clog << "# "
-		      << v.voxel << " "
-		      << v.interior << " "
-		      << v.distance << " "
-		      << v.origins.size() << std::endl;
-	    isInterior(v); 
-	  }
-	} else {
-	  DGtal::trace.error() << "# Structure not supported" << std::endl; 
-	}
-      }
-      
-    }
-  }
-  
-  
-  //--------------------------------------------------------------------------------
-  void setCameraSettings(std::string const& cameraSettings) {
-
-    std::string line;
-    std::ifstream file(cameraSettings);
-    if (file.is_open()) {
-      std::getline(file,line);
-      file.close();
-      std::cout << "# Camera settings set to: "
-		<< line << std::endl; 
-      polyscope::view::setViewFromJson(line, false);
-    }
-  }
-
-  
-}; 
-  
-//--------------------------------------------------------------------------------
-//-- main 
-//--------------------------------------------------------------------------------
-int main (int argc, char* argv[]) {
-
-  // parse command line using CLI
   CLI::App app;
-  
-  app.description("Apply the decomposition of surfaces into round primitives using the voting scheme method (decSiRP).\n");
+  app.option_defaults()->always_capture_default(); // show default values in --help
+  app.description("Decomposition of surfaces into round primitives using a voting scheme (DecSiRP).");
 
-  std::string polynomial = "2*x+6*y+15*z"; //or "x^2+y^2+2*z^2-x*y*z+z^3-100"
-  auto polynomialList = DGtal::Shortcuts<DGtal::Z3i::KSpace>::getPolynomialList();  
-  std::stringstream ss;
-  ss << "A polynomial";
-  if (polynomialList.size() > 0) {
-    ss << " (or a name in the following list: "
-       << polynomialList.begin()->first; 
-    for (auto it = ++polynomialList.begin(), itEnd = polynomialList.end();
-	 it != itEnd; ++it) {
-      ss << ", " << it->first; 
-    }
-    ss << ")"; 
-  }
+  // Input.
+  std::string meshFile, imageFile;
+  double h = 1.0;
+  double tRing = 3.0;
+  auto meshOpt = app.add_option("-m", meshFile, "input mesh (OBJ, OFF...)")->check(CLI::ExistingFile);
+  auto imageOpt = app.add_option("-i", imageFile, "input 3D binary image (VOL...), whose digital surface is processed")->check(CLI::ExistingFile);
+  auto hOpt = app.add_option("-g", h, "grid step h (mesh only)");
+  auto tRingOpt = app.add_option("-t", tRing, "t-ring used for the normal estimation (image only)");
+  meshOpt->excludes(imageOpt);
+  hOpt->needs(meshOpt);
+  tRingOpt->needs(imageOpt);
 
-  auto p_opt = app.add_option("-p", polynomial, ss.str());
-  double gridstep = 1.0;
-  auto g_opt = app.add_option("-g", gridstep, "Grid step");
-  
-  std::string image = "_default_";
-  auto i_opt = app.add_option("-i", image, "image filename");
-  std::string mesh = "_default_"; 
-  auto m_opt = app.add_option("-m", mesh, "mesh filename");
+  // Parameters (paper, Sect. 3, "Parameters"); default values are given in
+  // core/Decomposition.h.
+  Parameters p;
+  app.add_option("-l", p.ell, "segment length ell");
+  app.add_option("-a", p.thresholds.a, "accumulation threshold a");
+  app.add_option("-c", p.thresholds.c, "confidence threshold c");
+  app.add_option("-d", p.thresholds.d, "reachable distance threshold d");
+  app.add_option("--lambda", p.lambda,
+                 "label extension: values close to 1 limit the extension, "
+                 "values close to 0 allow maximal extension");
+  app.add_option("--rho", p.rho, "threshold of the label extension");
 
-  //either -p, -g or -i or -m -g
-  i_opt->excludes(p_opt);
-  i_opt->excludes(g_opt); 
-  i_opt->excludes(m_opt);
-  m_opt->excludes(p_opt);
-  m_opt->excludes(i_opt);
+  // Output.
+  std::string outputFile;
+  bool mergedMaterials = false;
+  std::string cameraSettingsFile;
+  app.add_option("--export-segmentation", outputFile,
+                 "run all steps and export the colored mesh (OBJ) without opening the viewer");
+  app.add_flag("--mergeMat", mergedMaterials,
+               "with --export-segmentation, also export an OBJ file with merged materials");
+  app.add_option("-s", cameraSettingsFile, "file storing the camera settings of the viewer");
 
-  //parameters
-  double maxLength = 5.0; 
-//  double beta = 5.0;
-  double confThreshold = 0.01;
-  double accThreshold = 5; 
-  double distThreshold = 1.0;
-  double lambda = 0.001;
-  double tring = 3.0;
-  double rho = 0.001;
-  bool mergeMat = false;
-    
-  app.add_option("-l", maxLength, "maximal ray length");
-//  app.add_option("--beta", beta, "beta parameter of the softmax function");
-  app.add_option("-a", accThreshold, "accumulation threshold");
-  app.add_option("-c", confThreshold, "confidence threshold");
-  app.add_option("-d", distThreshold, "distance threshold");
-  app.add_option("--lambda", lambda, "Controls label extension: values close to 1 limit extension, while values close to 0 allow maximal extension.");
-  app.add_option("--rho", rho, "probability threshold for the label extension process. ");
-  auto tring_opt = app.add_option("-t", tring, "t-ring for the normal estimation");
-  m_opt->excludes(tring_opt);
-  p_opt->excludes(tring_opt); 
-  
-  std::string cameraSettings = ""; 
-  app.add_option("-s", cameraSettings,
-		 "name of a file storing the camera settings");
-  
-  std::string segmentationOutput;
-  app.add_option("--export-segmentation", segmentationOutput,
-                 "Run all segmentation steps and export the colored OBJ without opening the interface.");
-    app.add_flag("--mergeMat", mergeMat, "When used with --export-segmentation, also export a second OBJ file with merged materials.");
   app.get_formatter()->column_width(40);
   CLI11_PARSE(app, argc, argv);
-  // END parse command line using CLI
 
-  const bool shouldExportSegmentation =
-      app.count("--export-segmentation") != 0;
+  if (meshFile.empty() && imageFile.empty()) {
+    std::cerr << "Error: an input mesh (-m) or image (-i) is required." << std::endl;
+    return 1;
+  }
+  const bool batchMode = !outputFile.empty();
+#ifndef DECSIRP_WITH_VIEWER
+  if (!batchMode) {
+    std::cerr << "Error: built without the viewer, --export-segmentation is required." << std::endl;
+    return 1;
+  }
+#endif
 
-  // polyscope session
-  PolyscopeManager pm(maxLength,
-		      accThreshold, confThreshold,
-		      distThreshold, lambda,
-		      rho);
-  
-  if ( app.count("-i") != 0 ) {
-    pm.initFromImage(image, tring, cameraSettings, !shouldExportSegmentation);
-  } else if ( app.count("-m") != 0 ) {
-    pm.initFromMesh(mesh, gridstep, cameraSettings, !shouldExportSegmentation);
+  Decomposition decomposition(meshFile.empty() ? loadDigitalSurface(imageFile, tRing)
+                                               : loadMesh(meshFile, h),
+                              p);
+
+  if (batchMode) {
+    decomposition.run();
+    exportSegmentedMesh(decomposition.surface(), decomposition.labels(), outputFile,
+                        mergedMaterials);
   } else {
-    pm.initFromPolynomial(polynomial, gridstep, cameraSettings,
-                          !shouldExportSegmentation);
+#ifdef DECSIRP_WITH_VIEWER
+    decomposition.computeVoting();
+    const std::string& inputFile = meshFile.empty() ? imageFile : meshFile;
+    const std::string name = inputFile.substr(inputFile.find_last_of('/') + 1);
+    showViewer(decomposition, "DecSiRP - " + name, cameraSettingsFile);
+#endif
   }
-
-  if (shouldExportSegmentation) {
-    pm.expansion(false);
-    pm.exportSegmentedMesh(segmentationOutput, mergeMat);
-  }
-
   return 0;
 }
